@@ -1,0 +1,275 @@
+# ASD Project .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+poetry.lock.bak
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Poetry
+poetry.toml
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ASD Specific
+
+# Build artifacts
+build/
+obj_dir/
+
+# Verilator outputs
+*.vcd
+*.fst
+*.lxt
+*.ghw
+*.vvp
+verilator/
+obj_dir/
+
+# Simulator artifacts
+*.pb
+*.jou
+*.log
+*.str
+*.his
+transcript
+modelsim.ini
+work/
+*.wlf
+*.vstf
+
+# Vivado/Xilinx
+*.jou
+*.log
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+.Xil/
+vivado*.jou
+vivado*.log
+vivado_pid*.str
+*.xpr.bak
+
+# Quartus/Intel
+*.qpf
+*.qsf
+*.qarlog
+*.rpt
+*.summary
+*.smsg
+*.done
+*.sof
+*.pof
+db/
+incremental_db/
+output_files/
+
+# Cocotb
+results.xml
+sim_build/
+
+# Waveform viewers
+*.sav
+*.wcfg
+
+# FPGA bitstreams (usually too large for git)
+*.bit
+*.bin
+*.mcs
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE and Editor files
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Package managers
+node_modules/
+package-lock.json
+yarn.lock
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Logs
+*.log
+logs/
+
+# Local configuration
+local_config.toml
+.asd-local/
+
+# Test outputs
+test_output/
+test_results/
+
+# Generated TOML files (optional - uncomment if you want to ignore generated configs)
+# *_generated.toml
+
+# Backup files
+*.bak
+*.backup
+*~
