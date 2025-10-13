@@ -5,12 +5,15 @@ A TOML-based build system for HDL projects that provides a unified CLI for all H
 
 ## Features
 
+- ⚡ **Verilator first** - Fast, open-source simulation and linting by default
+- Relies on Cocotb heavily
 - 🚀 **TOML-based configuration** - Single source of truth for module configuration
-- 🔧 **Zero repetition** - Parameter composition system avoids duplication
-- ⚡ **Verilator first** - Fast, open-source simulation by default
-- 🔍 **Smart discovery** - Automatically find and analyze HDL sources
 - 🛠️ **Unified CLI** - Single tool for all HDL tasks (simulate, lint, build)
 - 🐍 **No pytest dependency** - Run simulations without pytest
+
+## TODO
+
+[] 🔍 **Smart discovery** - Automatically find and analyze HDL sources
 
 ## Installation
 
