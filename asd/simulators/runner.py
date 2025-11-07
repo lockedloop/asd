@@ -1,6 +1,12 @@
 """Simulation runner for ASD using cocotb."""
 
 import json
+import os
+import sys
+import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +14,50 @@ from ..core.config import ModuleConfig
 from ..core.loader import TOMLLoader
 from ..core.repository import Repository
 from ..utils.sources import SourceManager
+
+
+@contextmanager
+def _redirect_output(log_file: Path) -> Iterator[None]:
+    """Redirect stdout/stderr to log file using OS-level file descriptors.
+
+    Always writes all output to log file. This captures subprocess output
+    that writes directly to file descriptors, not just Python's print() statements.
+
+    Args:
+        log_file: Path to log file
+
+    Yields:
+        None
+    """
+    # Flush Python buffers before redirecting
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    stdout_fd = sys.stdout.fileno()
+    stderr_fd = sys.stderr.fileno()
+
+    # Save original file descriptors
+    saved_stdout = os.dup(stdout_fd)
+    saved_stderr = os.dup(stderr_fd)
+
+    try:
+        # Open log file and redirect both stdout and stderr to it
+        log_fd = os.open(str(log_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        os.dup2(log_fd, stdout_fd)
+        os.dup2(log_fd, stderr_fd)
+        os.close(log_fd)
+
+        yield
+
+        # Flush before restoring
+        sys.stdout.flush()
+        sys.stderr.flush()
+    finally:
+        # Restore original file descriptors
+        os.dup2(saved_stdout, stdout_fd)
+        os.dup2(saved_stderr, stderr_fd)
+        os.close(saved_stdout)
+        os.close(saved_stderr)
 
 
 class SimulationRunner:
@@ -88,6 +138,7 @@ class SimulationRunner:
         gui: bool = False,
         waves: bool = True,
         parallel: int | None = None,
+        log_filename: str | None = None,
     ) -> int:
         """Run simulation with cocotb runner API.
 
@@ -101,10 +152,14 @@ class SimulationRunner:
             gui: Run with GUI (simulator-specific)
             waves: Generate waveforms (default: True)
             parallel: Number of parallel tests
+            log_filename: Custom log filename (default: asd-YYYY-MM-DD-HH-MM-SS.log)
 
         Returns:
             Return code (0 for success)
         """
+        # Suppress experimental API warning from cocotb
+        warnings.filterwarnings("ignore", category=UserWarning, module="cocotb.runner")
+
         try:
             from cocotb.runner import get_runner
         except ImportError:
@@ -151,46 +206,101 @@ class SimulationRunner:
         # Get cocotb runner
         runner = get_runner(simulator)
 
-        # Build the design
-        runner.build(
-            verilog_sources=[str(s) for s in sources],
-            hdl_toplevel=config.top,
-            includes=[str(i) for i in includes],
-            defines=defines,
-            parameters=parameters,
-            build_dir=str(build_dir),
-            always=True,  # Always rebuild
-        )
+        # Set up logging with timestamp or custom filename
+        if log_filename:
+            # Custom log filename is relative to current directory, not build dir
+            log_file = Path(log_filename)
+        else:
+            # Default log filename goes in build directory
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            log_file = build_dir / f"asd-{timestamp}.log"
+        log_file_abs = log_file.resolve()
 
-        # Set up test modules
+        from rich.console import Console
+
+        console = Console()
+        console.print(f"[dim]Log file: {log_file_abs}[/dim]")
+
+        # Set up test modules and add their directories to PYTHONPATH
         test_modules = []
+        test_dirs = set()
+
         for test_file in test_files:
             # Convert file path to Python module name
             # e.g., sim_counter.py -> sim_counter
             module_name = test_file.stem
             test_modules.append(module_name)
+            # Collect test directory for PYTHONPATH
+            test_dirs.add(str(test_file.parent.resolve()))
 
-        # Run tests
-        from rich.console import Console
-
-        console = Console()
-        console.print(f"[bold green]Running tests with {simulator}...[/bold green]")
-        console.print(f"Configuration: {configuration}")
-        console.print(f"Top module: {config.top}")
-        console.print(f"Test modules: {', '.join(test_modules)}")
+        # Add test directories to PYTHONPATH for subprocess only
+        if test_dirs:
+            current_path = test_env.get("PYTHONPATH", "")
+            new_pythonpath = ":".join(test_dirs)
+            if current_path:
+                test_env["PYTHONPATH"] = f"{new_pythonpath}:{current_path}"
+            else:
+                test_env["PYTHONPATH"] = new_pythonpath
 
         try:
-            runner.test(
-                hdl_toplevel=config.top,
-                test_module=",".join(test_modules),
-                waves=waves,
-                gui=gui,
-                extra_env=test_env,
-                build_dir=str(build_dir),
-            )
+            # Redirect all output (build and test) to log file
+            with _redirect_output(log_file):
+                # Debug output
+                print(f"Test files found: {[str(f) for f in test_files]}")
+                print(f"Test directories: {test_dirs}")
+                print(f"PYTHONPATH: {test_env.get('PYTHONPATH', 'NOT SET')}")
+                print()
+                print(f"Running tests with {simulator}...")
+                print(f"Configuration: {configuration}")
+                print(f"Top module: {config.top}")
+                print(f"Test modules: {', '.join(test_modules)}")
+                print()
+                sys.stdout.flush()
+
+                # Build the design
+                runner.build(
+                    verilog_sources=[str(s) for s in sources],
+                    hdl_toplevel=config.top,
+                    includes=[str(i) for i in includes],
+                    defines=defines,
+                    parameters=parameters,
+                    build_dir=str(build_dir),
+                    always=True,  # Always rebuild
+                )
+
+                # Run tests - set environment variables directly
+                # Save original environment
+                original_env = os.environ.copy()
+                try:
+                    # Merge test environment into os.environ
+                    os.environ.update(test_env)
+                    print(f"Environment PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
+                    sys.stdout.flush()
+
+                    runner.test(
+                        hdl_toplevel=config.top,
+                        test_module=",".join(test_modules),
+                        waves=waves,
+                        gui=gui,
+                        build_dir=str(build_dir),
+                    )
+                finally:
+                    # Restore original environment
+                    os.environ.clear()
+                    os.environ.update(original_env)
+
+            # Check log file for critical failures that cocotb doesn't report as exceptions
+            if log_file.exists():
+                log_content = log_file.read_text()
+                if "CRITICAL" in log_content or "Failed to import module" in log_content:
+                    console.print("[red]✗ Simulation failed: Test import error[/red]")
+                    console.print(f"[dim]Check log file for details: {log_file_abs}[/dim]")
+                    return 1
+
             return 0
         except Exception as e:
-            print(f"Simulation failed: {e}")
+            console.print(f"[red]✗ Simulation failed: {e}[/red]")
+            console.print(f"[dim]Check log file for details: {log_file_abs}[/dim]")
             return 1
 
     def _find_test_files(self, config: ModuleConfig, test_name: str | None = None) -> list[Path]:

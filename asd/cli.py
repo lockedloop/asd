@@ -188,6 +188,7 @@ def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
 @click.option("--no-waves", is_flag=True, help="Disable waveform generation")
 @click.option("--parallel", type=int, help="Run tests in parallel")
 @click.option("--list-tests", is_flag=True, help="List available tests")
+@click.option("--log", help="Custom log filename (default: asd-YYYY-MM-DD-HH-MM-SS.log)")
 @click.pass_context
 def sim(
     ctx: click.Context,
@@ -200,6 +201,7 @@ def sim(
     no_waves: bool,
     parallel: int | None,
     list_tests: bool,
+    log: str | None,
 ) -> None:
     """Run simulation with cocotb.
 
@@ -299,6 +301,7 @@ def sim(
             gui=gui,
             waves=waves,
             parallel=parallel,
+            log_filename=log,
         )
 
         if result != 0:
