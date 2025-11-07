@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import shutil
 import sys
 import warnings
 from collections.abc import Iterator
@@ -157,16 +159,6 @@ class SimulationRunner:
         Returns:
             Return code (0 for success)
         """
-        # Suppress experimental API warning from cocotb
-        warnings.filterwarnings("ignore", category=UserWarning, module="cocotb.runner")
-
-        try:
-            from cocotb.runner import get_runner
-        except ImportError:
-            print("Error: cocotb is required for simulation")
-            print("Install with: pip install cocotb")
-            return 1
-
         # Use default configuration if not specified
         configuration = configuration or "default"
 
@@ -196,12 +188,29 @@ class SimulationRunner:
                 print("Or test files specified in TOML simulation.tests")
             return 1
 
-        # Create build directory: build-{toml_stem}-{configuration}/
-        build_dir = Path(f"build-{toml_stem}-{configuration}")
+        # Suppress experimental API warning from cocotb
+        warnings.filterwarnings("ignore", category=UserWarning, module="cocotb.runner")
+
+        try:
+            from cocotb.runner import get_runner
+        except ImportError:
+            print("Error: cocotb is required for simulation")
+            print("Install with: pip install cocotb")
+            return 1
+
+        # Create build directory: asdw/{toml_stem}-{configuration}/
+        build_dir = Path("asdw") / f"{toml_stem}-{configuration}"
         build_dir.mkdir(parents=True, exist_ok=True)
 
         # Prepare environment variables with configuration
         test_env = self._prepare_test_environment(parameters, defines, configuration)
+
+        # Set up test module directories
+        test_dirs = set()
+        test_modules = []
+        for test_file in test_files:
+            test_modules.append(test_file.stem)
+            test_dirs.add(str(test_file.parent.resolve()))
 
         # Get cocotb runner
         runner = get_runner(simulator)
@@ -211,9 +220,9 @@ class SimulationRunner:
             # Custom log filename is relative to current directory, not build dir
             log_file = Path(log_filename)
         else:
-            # Default log filename goes in build directory
+            # Default log filename goes in asdw directory with configuration name
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            log_file = build_dir / f"asd-{timestamp}.log"
+            log_file = Path("asdw") / f"{configuration}-{timestamp}.log"
         log_file_abs = log_file.resolve()
 
         from rich.console import Console
@@ -221,41 +230,27 @@ class SimulationRunner:
         console = Console()
         console.print(f"[dim]Log file: {log_file_abs}[/dim]")
 
-        # Set up test modules and add their directories to PYTHONPATH
-        test_modules = []
-        test_dirs = set()
-
+        # Copy test files to build directory
+        # This is necessary because cocotb's subprocess doesn't respect PYTHONPATH
         for test_file in test_files:
-            # Convert file path to Python module name
-            # e.g., sim_counter.py -> sim_counter
-            module_name = test_file.stem
-            test_modules.append(module_name)
-            # Collect test directory for PYTHONPATH
-            test_dirs.add(str(test_file.parent.resolve()))
+            dest = build_dir / test_file.name
+            shutil.copy2(test_file, dest)
 
-        # Add test directories to PYTHONPATH for subprocess only
-        if test_dirs:
-            current_path = test_env.get("PYTHONPATH", "")
-            new_pythonpath = ":".join(test_dirs)
-            if current_path:
-                test_env["PYTHONPATH"] = f"{new_pythonpath}:{current_path}"
-            else:
-                test_env["PYTHONPATH"] = new_pythonpath
+        # Also ensure asd package is in PYTHONPATH so tests can import asd.simulators.cocotb_utils
+        asd_package_dir = Path(__file__).parent.parent.parent.resolve()  # Go up to asd root
+        current_pythonpath = os.environ.get("PYTHONPATH", "")
+        if current_pythonpath:
+            os.environ["PYTHONPATH"] = f"{asd_package_dir}:{current_pythonpath}"
+        else:
+            os.environ["PYTHONPATH"] = str(asd_package_dir)
 
         try:
             # Redirect all output (build and test) to log file
             with _redirect_output(log_file):
-                # Debug output
-                print(f"Test files found: {[str(f) for f in test_files]}")
-                print(f"Test directories: {test_dirs}")
-                print(f"PYTHONPATH: {test_env.get('PYTHONPATH', 'NOT SET')}")
-                print()
-                print(f"Running tests with {simulator}...")
-                print(f"Configuration: {configuration}")
-                print(f"Top module: {config.top}")
-                print(f"Test modules: {', '.join(test_modules)}")
-                print()
-                sys.stdout.flush()
+                # Prepare build arguments for waveform tracing
+                build_args = []
+                if waves and simulator == "verilator":
+                    build_args = ["--trace", "--trace-structs"]
 
                 # Build the design
                 runner.build(
@@ -264,38 +259,49 @@ class SimulationRunner:
                     includes=[str(i) for i in includes],
                     defines=defines,
                     parameters=parameters,
+                    build_args=build_args,
                     build_dir=str(build_dir),
+                    waves=waves,
                     always=True,  # Always rebuild
                 )
 
-                # Run tests - set environment variables directly
-                # Save original environment
-                original_env = os.environ.copy()
-                try:
-                    # Merge test environment into os.environ
-                    os.environ.update(test_env)
-                    print(f"Environment PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
-                    sys.stdout.flush()
+                # Run tests (PYTHONPATH is set in os.environ above)
+                # For Verilator, we need to explicitly set VM_TRACE when building with make
+                test_args = []
+                if waves and simulator == "verilator":
+                    test_args = ["+trace"]
 
-                    runner.test(
-                        hdl_toplevel=config.top,
-                        test_module=",".join(test_modules),
-                        waves=waves,
-                        gui=gui,
-                        build_dir=str(build_dir),
-                    )
-                finally:
-                    # Restore original environment
-                    os.environ.clear()
-                    os.environ.update(original_env)
+                runner.test(
+                    hdl_toplevel=config.top,
+                    test_module=",".join(test_modules),
+                    waves=waves,
+                    gui=gui,
+                    test_args=test_args,
+                    extra_env=test_env,
+                    build_dir=str(build_dir),
+                )
 
-            # Check log file for critical failures that cocotb doesn't report as exceptions
+            # Check log file for test failures
             if log_file.exists():
                 log_content = log_file.read_text()
+
+                # Check for critical failures (import errors, etc.)
                 if "CRITICAL" in log_content or "Failed to import module" in log_content:
                     console.print("[red]✗ Simulation failed: Test import error[/red]")
                     console.print(f"[dim]Check log file for details: {log_file_abs}[/dim]")
                     return 1
+
+                # Check for test failures by looking for "FAIL=" in the results summary
+                # Format: "** TESTS=7 PASS=3 FAIL=4 SKIP=0 **"
+                fail_match = re.search(r"\*\* TESTS=\d+ PASS=\d+ FAIL=(\d+)", log_content)
+                if fail_match:
+                    fail_count = int(fail_match.group(1))
+                    if fail_count > 0:
+                        console.print(
+                            f"[red]✗ Simulation failed: {fail_count} test(s) failed[/red]"
+                        )
+                        console.print(f"[dim]Check log file for details: {log_file_abs}[/dim]")
+                        return 1
 
             return 0
         except Exception as e:
@@ -400,7 +406,8 @@ class SimulationRunner:
         Returns:
             Dictionary of environment variables
         """
-        env = {}
+        # Start with a copy of the current environment
+        env = dict(os.environ)
 
         # Encode parameters as JSON
         if parameters:
@@ -444,9 +451,7 @@ class SimulationRunner:
             toml_stem: TOML file stem
             configuration: Configuration name
         """
-        import shutil
-
-        build_dir = Path(f"build-{toml_stem}-{configuration}")
+        build_dir = Path("asdw") / f"{toml_stem}-{configuration}"
         if build_dir.exists():
             shutil.rmtree(build_dir)
             print(f"Cleaned {build_dir}")
