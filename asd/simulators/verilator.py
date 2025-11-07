@@ -2,7 +2,7 @@
 
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +147,7 @@ class VerilatorSimulator(SimulatorBase):
 
         # Execute
         try:
-            result = subprocess.run(  # nosec B603
+            result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -247,7 +247,7 @@ class VerilatorSimulator(SimulatorBase):
 
         # Run simulation
         try:
-            result = subprocess.run(  # nosec B603
+            result = subprocess.run(
                 cmd,
                 env=env,
                 capture_output=True,

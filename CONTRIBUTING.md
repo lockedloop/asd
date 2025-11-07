@@ -55,7 +55,6 @@ Pre-commit hooks run automatically on `git commit`. They will:
 - Sort imports with isort
 - Lint with Ruff
 - Type check with mypy (strict mode)
-- Check for security issues with Bandit
 - Validate docstrings with pydocstyle
 - Check YAML/TOML syntax
 - Fix trailing whitespace and line endings

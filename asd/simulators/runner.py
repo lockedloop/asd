@@ -206,21 +206,24 @@ class SimulationRunner:
         Returns:
             List of test file paths
         """
-        test_files = []
+        test_files: list[Path] = []
 
-        # If specific test requested and defined in config
-        if test_name and config.simulation and config.simulation.tests:
-            test_config = config.simulation.tests.get(test_name)
-            if test_config and hasattr(test_config, "test_module"):
-                # Convert module name to file path
-                test_file = Path(test_config.test_module.replace(".", "/") + ".py")
-                if test_file.exists():
-                    test_files.append(test_file)
-                else:
-                    # Try relative to repo root
-                    test_file = self.repo.root / test_file
-                    if test_file.exists():
+        # Check if tests are defined in TOML
+        if config.simulation and config.simulation.tests:
+            if test_name:
+                # Specific test requested
+                test_config = config.simulation.tests.get(test_name)
+                if test_config and hasattr(test_config, "test_module"):
+                    test_file = self._resolve_test_path(test_config.test_module)
+                    if test_file:
                         test_files.append(test_file)
+            else:
+                # No specific test - use all tests from TOML
+                for test_config in config.simulation.tests.values():
+                    if hasattr(test_config, "test_module"):
+                        test_file = self._resolve_test_path(test_config.test_module)
+                        if test_file:
+                            test_files.append(test_file)
 
         # If no test files found, auto-discover sim_*.py
         if not test_files and config.sources.modules:
@@ -237,6 +240,39 @@ class SimulationRunner:
                 test_files.extend(tests_dir.glob("sim_*.py"))
 
         return test_files
+
+    def _resolve_test_path(self, test_module: str) -> Path | None:
+        """Resolve test module path to absolute file path.
+
+        Args:
+            test_module: Test module path (can be file path or dotted module name)
+
+        Returns:
+            Resolved test file path, or None if not found
+        """
+        # First, try as a direct file path
+        test_file = Path(test_module)
+        if not test_file.suffix:
+            # If no extension, assume .py
+            test_file = test_file.with_suffix(".py")
+
+        # Try as absolute path
+        if test_file.is_absolute() and test_file.exists():
+            return test_file
+
+        # Try relative to repo root
+        test_file_abs = self.repo.root / test_file
+        if test_file_abs.exists():
+            return test_file_abs
+
+        # Try converting dotted module name to path
+        if "." in test_module and not test_module.endswith(".py"):
+            test_file = Path(test_module.replace(".", "/") + ".py")
+            test_file_abs = self.repo.root / test_file
+            if test_file_abs.exists():
+                return test_file_abs
+
+        return None
 
     def _prepare_test_environment(
         self, parameters: dict[str, Any], defines: dict[str, Any], config_name: str

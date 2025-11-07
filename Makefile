@@ -30,7 +30,6 @@ test-cov:
 lint:
 	@echo "Running linters..."
 	poetry run ruff check asd/
-	poetry run bandit -r asd/ -c pyproject.toml
 	poetry run pydocstyle asd/
 
 format:

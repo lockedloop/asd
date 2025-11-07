@@ -469,8 +469,17 @@ class TOMLLoader:
         # Process tests
         tests = {}
         if "tests" in sim_data:
-            for test_name, test_data in sim_data["tests"].items():
-                tests[test_name] = TestConfig(**test_data)
+            tests_data = sim_data["tests"]
+            if isinstance(tests_data, dict):
+                # Dict format: {"test_name": {test_module: "...", ...}}
+                for test_name, test_data in tests_data.items():
+                    tests[test_name] = TestConfig(**test_data)
+            elif isinstance(tests_data, list):
+                # List format: ["path/to/test.py", ...]
+                # Auto-generate test names from file paths
+                for test_path in tests_data:
+                    test_name = Path(test_path).stem  # Use filename without extension
+                    tests[test_name] = TestConfig(test_module=test_path)
 
         return SimulationConfig(
             configurations=sim_data.get("configurations"),

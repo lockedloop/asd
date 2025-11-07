@@ -165,7 +165,7 @@ class TOMLGenerator:
                         try:
                             sub_module = self.parser.parse_file(pf)
                             to_visit.extend(sub_module.instances)
-                        except Exception:  # nosec B110
+                        except Exception:
                             # Not a module file, might be package or include
                             pass
                         break
