@@ -18,6 +18,36 @@ class ParameterType(str, Enum):
     REAL = "real"
 
 
+def infer_parameter_type(value: Any) -> ParameterType:
+    """Infer parameter type from default value using pattern matching.
+
+    Args:
+        value: Default value to infer type from
+
+    Returns:
+        Inferred ParameterType
+
+    Examples:
+        >>> infer_parameter_type(True)
+        ParameterType.BOOLEAN
+        >>> infer_parameter_type(42)
+        ParameterType.INTEGER
+        >>> infer_parameter_type(3.14)
+        ParameterType.REAL
+        >>> infer_parameter_type("hello")
+        ParameterType.STRING
+    """
+    match value:
+        case bool():
+            return ParameterType.BOOLEAN
+        case int():
+            return ParameterType.INTEGER
+        case float():
+            return ParameterType.REAL
+        case _:
+            return ParameterType.STRING
+
+
 class Parameter(BaseModel):
     """Single parameter definition.
 
@@ -41,14 +71,7 @@ class Parameter(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         """Auto-infer type from default value if not specified."""
         if self.type is None:
-            if isinstance(self.default, bool):
-                self.type = ParameterType.BOOLEAN
-            elif isinstance(self.default, int):
-                self.type = ParameterType.INTEGER
-            elif isinstance(self.default, float):
-                self.type = ParameterType.REAL
-            else:
-                self.type = ParameterType.STRING
+            self.type = infer_parameter_type(self.default)
 
     def get_configuration_values(self) -> dict[str, Any]:
         """Get all extra fields as configuration values.
@@ -116,14 +139,7 @@ class Define(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         """Auto-infer type from default value if not specified."""
         if self.type is None:
-            if isinstance(self.default, bool):
-                self.type = ParameterType.BOOLEAN
-            elif isinstance(self.default, int):
-                self.type = ParameterType.INTEGER
-            elif isinstance(self.default, float):
-                self.type = ParameterType.REAL
-            else:
-                self.type = ParameterType.STRING
+            self.type = infer_parameter_type(self.default)
 
     def get_configuration_values(self) -> dict[str, Any]:
         """Get all extra fields as configuration values.

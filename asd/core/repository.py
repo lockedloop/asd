@@ -17,7 +17,6 @@ class Repository:
             root: Explicit repository root path. If None, will auto-detect.
         """
         self.root = self._find_root(root)
-        self._cache: dict[str, Path] = {}
 
     def _find_root(self, explicit_root: Path | None = None) -> Path:
         """Find repository root using .asd-root marker.

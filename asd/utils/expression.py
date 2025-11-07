@@ -10,12 +10,19 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+# Type aliases for complex type expressions using Python 3.12+ type keyword
+type ASTOperatorType = type[ast.operator] | type[ast.unaryop]
+type OperatorFunc = Callable[..., Any]
+type OperatorMap = dict[ASTOperatorType, OperatorFunc]
+type FunctionMap = dict[str, OperatorFunc]
+type ContextDict = dict[str, Any]
+
 
 class SafeExpressionEvaluator:
     """Safely evaluate mathematical expressions."""
 
     # Allowed operators
-    OPERATORS: dict[type[ast.operator] | type[ast.unaryop], Callable[..., Any]] = {
+    OPERATORS: OperatorMap = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -34,7 +41,7 @@ class SafeExpressionEvaluator:
     }
 
     # Allowed functions
-    FUNCTIONS: dict[str, Callable[..., Any]] = {
+    FUNCTIONS: FunctionMap = {
         "log2": lambda x: int(math.log2(x)),
         "log10": math.log10,
         "log": math.log,
@@ -49,7 +56,7 @@ class SafeExpressionEvaluator:
         "round": round,
     }
 
-    def __init__(self, context: dict[str, Any] | None = None):
+    def __init__(self, context: ContextDict | None = None):
         """Initialize evaluator with optional context.
 
         Args:
@@ -206,7 +213,7 @@ class SafeExpressionEvaluator:
             raise ValueError(f"Unsupported expression type: {type(node).__name__}")
 
 
-def evaluate_expression(expression: str, context: dict[str, Any]) -> Any:
+def evaluate_expression(expression: str, context: ContextDict) -> Any:
     """Convenience function to evaluate an expression.
 
     Args:

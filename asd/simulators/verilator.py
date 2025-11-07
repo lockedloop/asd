@@ -6,7 +6,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ..utils.logging import get_logger
 from .base import SimulatorBase
+
+logger = get_logger()
 
 
 class VerilatorSimulator(SimulatorBase):
@@ -82,7 +85,7 @@ class VerilatorSimulator(SimulatorBase):
             Return code
         """
         if not self.verilator_path:
-            print("Error: Verilator not found")
+            logger.error("Verilator not found")
             return 1
 
         cmd = [str(self.verilator_path)]
@@ -141,9 +144,9 @@ class VerilatorSimulator(SimulatorBase):
 
         # Print command if verbose
         if verbose:
-            print("\n[Verilator Command]")
-            print(" ".join(cmd))
-            print()
+            logger.info("\n[Verilator Command]")
+            logger.info(" ".join(cmd))
+            logger.info("")
 
         # Execute
         try:
@@ -155,19 +158,19 @@ class VerilatorSimulator(SimulatorBase):
             )
 
             if result.returncode != 0:
-                print("Verilator compilation failed:")
+                logger.error("Verilator compilation failed:")
                 if result.stderr:
-                    print(result.stderr)
+                    logger.error(result.stderr)
                 if result.stdout:
-                    print(result.stdout)
+                    logger.error(result.stdout)
 
             return result.returncode
 
         except subprocess.TimeoutExpired:
-            print("Verilator compilation timed out")
+            logger.error("Verilator compilation timed out")
             return 1
         except Exception as e:
-            print(f"Error running Verilator: {e}")
+            logger.error(f"Error running Verilator: {e}")
             return 1
 
     def elaborate(self, top_module: str, parameters: dict[str, Any], **kwargs: Any) -> int:
@@ -207,7 +210,7 @@ class VerilatorSimulator(SimulatorBase):
         exe_path = self.build_dir / (self.exe_name or f"V{top_module}")
 
         if not exe_path.exists():
-            print(f"Executable {exe_path} not found. Compile first.")
+            logger.error(f"Executable {exe_path} not found. Compile first.")
             return 1
 
         cmd = [str(exe_path)]
@@ -243,7 +246,7 @@ class VerilatorSimulator(SimulatorBase):
                         env["COCOTB_VPI_MODULE"] = str(vpi_lib)
                         break
             except ImportError:
-                print("Warning: cocotb not found, test module will not be loaded")
+                logger.warning("cocotb not found, test module will not be loaded")
 
         # Run simulation
         try:
@@ -257,22 +260,22 @@ class VerilatorSimulator(SimulatorBase):
             )
 
             if result.returncode != 0:
-                print("Simulation failed:")
+                logger.error("Simulation failed:")
                 if result.stderr:
-                    print(result.stderr)
+                    logger.error(result.stderr)
                 if result.stdout:
-                    print(result.stdout)
+                    logger.error(result.stdout)
             else:
                 if result.stdout:
-                    print(result.stdout)
+                    logger.info(result.stdout)
 
             return result.returncode
 
         except subprocess.TimeoutExpired:
-            print(f"Simulation timed out after {timeout} seconds")
+            logger.error(f"Simulation timed out after {timeout} seconds")
             return 1
         except Exception as e:
-            print(f"Error running simulation: {e}")
+            logger.error(f"Error running simulation: {e}")
             return 1
 
     def _generate_main_cpp(self, top_module: str) -> str:

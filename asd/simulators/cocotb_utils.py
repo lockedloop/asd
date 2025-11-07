@@ -68,7 +68,9 @@ def get_config_name() -> str:
 def log_config() -> None:
     """Print configuration information for debugging.
 
-    Prints the current configuration name, parameters, and defines.
+    Prints the current configuration name, parameters, defines, and seed.
+    The seed is accessed via cocotb.RANDOM_SEED which is automatically
+    set by cocotb from the COCOTB_RANDOM_SEED environment variable.
     """
     import cocotb
 
@@ -79,6 +81,10 @@ def log_config() -> None:
     cocotb.log.info("=" * 60)
     cocotb.log.info(f"ASD Configuration: {config_name}")
     cocotb.log.info("=" * 60)
+
+    # Access cocotb's native random seed
+    seed = cocotb.RANDOM_SEED
+    cocotb.log.info(f"Random Seed: 0x{seed:08X} ({seed})")
 
     if parameters:
         cocotb.log.info("Parameters:")

@@ -6,7 +6,11 @@ from ..core.config import ModuleConfig
 from ..core.loader import TOMLLoader
 from ..core.repository import Repository
 from ..simulators.verilator import VerilatorSimulator
+from ..utils.config_validation import validate_tool_configuration
+from ..utils.logging import get_logger
 from ..utils.sources import SourceManager
+
+logger = get_logger()
 
 
 class Linter:
@@ -26,7 +30,7 @@ class Linter:
     def validate_configuration(
         self, config: ModuleConfig, requested_config: str
     ) -> tuple[bool, str]:
-        """Validate that requested configuration is allowed by tool configuration.
+        """Validate that requested configuration is allowed by lint tool.
 
         Args:
             config: Module configuration
@@ -35,46 +39,12 @@ class Linter:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        # Check if configuration exists in module
-        if requested_config != "all" and requested_config not in config.configurations:
-            return (
-                False,
-                f"Configuration '{requested_config}' not found. "
-                f"Available: {', '.join(config.configurations.keys())}",
-            )
-
-        # If no lint config, allow all configurations
-        if not config.lint:
-            return (True, "")
-
-        # If lint.configurations is None or empty, allow all
-        if not config.lint.configurations:
-            return (True, "")
-
-        # If lint.configurations contains "all", allow any configuration
-        if "all" in config.lint.configurations:
-            return (True, "")
-
-        # Otherwise, requested config must be in the allowed list
-        if requested_config == "all":
-            # "all" means all module configurations must be in tool's allowed list
-            for cfg_name in config.configurations.keys():
-                if cfg_name not in config.lint.configurations:
-                    return (
-                        False,
-                        f"Configuration '{cfg_name}' not supported by lint tool. "
-                        f"Tool supports: {', '.join(config.lint.configurations)}",
-                    )
-            return (True, "")
-        else:
-            # Single config must be in allowed list
-            if requested_config not in config.lint.configurations:
-                return (
-                    False,
-                    f"Configuration '{requested_config}' not supported by lint tool. "
-                    f"Tool supports: {', '.join(config.lint.configurations)}",
-                )
-            return (True, "")
+        return validate_tool_configuration(
+            config=config,
+            requested_config=requested_config,
+            tool_config=config.lint,
+            tool_name="lint",
+        )
 
     def lint(
         self,
@@ -99,14 +69,14 @@ class Linter:
             Number of issues found (0 for success)
         """
         if tool != "verilator":
-            print(f"Error: Unsupported lint tool '{tool}'")
+            logger.error(f"Unsupported lint tool '{tool}'")
             return 1
 
         # Use Verilator for linting
         verilator = VerilatorSimulator()
 
         if not verilator.is_available():
-            print("Error: Verilator is not available on this system")
+            logger.error("Verilator is not available on this system")
             return 1
 
         # Compose parameters and defines for linting
@@ -118,14 +88,14 @@ class Linter:
         # Prepare source files
         sources = self.source_manager.prepare_sources(config)
         if not sources:
-            print("Error: No source files found")
+            logger.error("No source files found")
             return 1
 
         # Get include directories
         includes = self.source_manager.get_include_dirs(config)
 
         # Run lint
-        print(f"Running lint checks with {tool}...")
+        logger.info(f"Running lint checks with {tool}...")
         ret = verilator.lint(
             sources=sources,
             parameters=parameters,

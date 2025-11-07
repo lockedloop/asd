@@ -8,6 +8,9 @@ from pathlib import Path
 
 from ..core.config import ModuleConfig
 from ..core.repository import Repository
+from .logging import get_logger
+
+logger = get_logger()
 
 
 class SourceManager:
@@ -51,11 +54,11 @@ class SourceManager:
 
         # Report missing files if any
         if missing_files:
-            print(f"Warning: {len(missing_files)} source file(s) not found:")
+            logger.warning(f"{len(missing_files)} source file(s) not found:")
             for file in missing_files[:5]:  # Show first 5 missing files
-                print(f"  - {file}")
+                logger.warning(f"  - {file}")
             if len(missing_files) > 5:
-                print(f"  ... and {len(missing_files) - 5} more")
+                logger.warning(f"  ... and {len(missing_files) - 5} more")
 
         return sources
 
@@ -154,13 +157,13 @@ class SourceManager:
 
         for source in sources:
             if not source.exists():
-                print(f"Error: Source file does not exist: {source}")
+                logger.error(f"Source file does not exist: {source}")
                 all_valid = False
             elif not source.is_file():
-                print(f"Error: Source path is not a file: {source}")
+                logger.error(f"Source path is not a file: {source}")
                 all_valid = False
             elif not os.access(source, os.R_OK):
-                print(f"Error: Source file is not readable: {source}")
+                logger.error(f"Source file is not readable: {source}")
                 all_valid = False
 
         return all_valid

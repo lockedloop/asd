@@ -143,14 +143,49 @@ def auto(
         console.print(f"  Parameters: {len(config.parameters)}")
 
 
+def _parse_param_value(value: str) -> int | float | bool | str:
+    """Parse parameter value with type inference.
+
+    Attempts to infer the most appropriate type for the value.
+    Order: bool -> int -> float -> str
+
+    Args:
+        value: String value to parse
+
+    Returns:
+        Parsed value with inferred type
+    """
+    # Check for boolean values
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+
+    # Try integer
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    # Try float
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    # Default to string
+    return value
+
+
 def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
     """Parse parameter overrides from CLI.
+
+    Supports automatic type inference for integers, floats, booleans, and strings.
+    Boolean values should be specified as "true" or "false" (case-insensitive).
 
     Args:
         params: Tuple of KEY=VALUE strings
 
     Returns:
-        Dictionary of parameter overrides
+        Dictionary of parameter overrides with inferred types
     """
     overrides: dict[str, Any] = {}
     for param in params:
@@ -158,16 +193,63 @@ def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
             console.print(f"[yellow]Warning:[/yellow] Invalid parameter format: {param}")
             continue
         key, value = param.split("=", 1)
-        # Try to parse as number
-        try:
-            overrides[key] = int(value)
-        except ValueError:
-            try:
-                overrides[key] = float(value)
-            except ValueError:
-                # Keep as string
-                overrides[key] = value
+        overrides[key] = _parse_param_value(value)
     return overrides
+
+
+def expand_configurations(
+    config_names: tuple[str, ...],
+    module_config: Any,
+    validator_func: Any,
+    ctx: click.Context,
+) -> list[str]:
+    """Expand configuration names into a list of configurations to run.
+
+    Handles the special "all" keyword by expanding it to all available
+    configurations. Validates each configuration using the provided
+    validator function.
+
+    Args:
+        config_names: Tuple of configuration names (may include "all")
+        module_config: Module configuration object
+        validator_func: Validation function that takes (module_config, config_name)
+                       and returns (is_valid, error_message)
+        ctx: Click context for error handling
+
+    Returns:
+        List of validated configuration names to run
+
+    Raises:
+        SystemExit: If validation fails for any configuration
+    """
+    configs_to_run: list[str] = []
+
+    # Handle "all" keyword
+    if "all" in config_names:
+        # Validate that "all" is allowed
+        is_valid, error_msg = validator_func(module_config, "all")
+        if not is_valid:
+            console.print(f"[red]Error:[/red] {error_msg}")
+            ctx.exit(1)
+
+        # Expand to all module configurations
+        configs_to_run = (
+            list(module_config.configurations.keys())
+            if module_config.configurations
+            else ["default"]
+        )
+    else:
+        # Use specified configurations
+        configs_to_run = list(config_names)
+
+        # Validate each requested configuration
+        for cfg in configs_to_run:
+            is_valid, error_msg = validator_func(module_config, cfg)
+            if not is_valid:
+                console.print(f"[red]Error:[/red] {error_msg}")
+                ctx.exit(1)
+
+    return configs_to_run
 
 
 @cli.command()
@@ -189,6 +271,12 @@ def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
 @click.option("--parallel", type=int, help="Run tests in parallel")
 @click.option("--list-tests", is_flag=True, help="List available tests")
 @click.option("--log", help="Custom log filename (default: asd-YYYY-MM-DD-HH-MM-SS.log)")
+@click.option(
+    "--seed",
+    type=int,
+    default=0xDEADBEEF,
+    help="Random seed for simulation (default: 0xDEADBEEF)",
+)
 @click.pass_context
 def sim(
     ctx: click.Context,
@@ -202,6 +290,7 @@ def sim(
     parallel: int | None,
     list_tests: bool,
     log: str | None,
+    seed: int,
 ) -> None:
     """Run simulation with cocotb.
 
@@ -210,6 +299,7 @@ def sim(
         asd sim module.toml -c wide            # Run with wide configuration
         asd sim module.toml -c default -c wide # Run multiple configurations
         asd sim module.toml -c all             # Run all configurations
+        asd sim module.toml --seed 12345       # Run with custom random seed
     """
     loader = get_loader(ctx)
     repo = get_repository(ctx)
@@ -246,33 +336,10 @@ def sim(
     # Waves enabled by default, disabled by --no-waves
     waves = not no_waves
 
-    # Determine which configurations to run
-    configs_to_run: list[str] = []
-
-    # Handle "all" keyword
-    if "all" in config:
-        # Validate that "all" is allowed
-        is_valid, error_msg = runner.validate_configuration(module_config, "all")
-        if not is_valid:
-            console.print(f"[red]Error:[/red] {error_msg}")
-            ctx.exit(1)
-
-        # Expand to all module configurations
-        configs_to_run = (
-            list(module_config.configurations.keys())
-            if module_config.configurations
-            else ["default"]
-        )
-    else:
-        # Use specified configurations
-        configs_to_run = list(config)
-
-        # Validate each requested configuration
-        for cfg in configs_to_run:
-            is_valid, error_msg = runner.validate_configuration(module_config, cfg)
-            if not is_valid:
-                console.print(f"[red]Error:[/red] {error_msg}")
-                ctx.exit(1)
+    # Determine which configurations to run using shared helper
+    configs_to_run = expand_configurations(
+        config, module_config, runner.validate_configuration, ctx
+    )
 
     # Show what we're running
     if len(configs_to_run) > 1:
@@ -302,6 +369,7 @@ def sim(
             waves=waves,
             parallel=parallel,
             log_filename=log,
+            seed=seed,
         )
 
         if result != 0:
@@ -380,33 +448,10 @@ def lint(
 
         extra_args_list = shlex.split(extra_args)
 
-    # Determine which configurations to run
-    configs_to_run: list[str] = []
-
-    # Handle "all" keyword
-    if "all" in config:
-        # Validate that "all" is allowed
-        is_valid, error_msg = linter.validate_configuration(module_config, "all")
-        if not is_valid:
-            console.print(f"[red]Error:[/red] {error_msg}")
-            ctx.exit(1)
-
-        # Expand to all module configurations
-        configs_to_run = (
-            list(module_config.configurations.keys())
-            if module_config.configurations
-            else ["default"]
-        )
-    else:
-        # Use specified configurations
-        configs_to_run = list(config)
-
-        # Validate each requested configuration
-        for cfg in configs_to_run:
-            is_valid, error_msg = linter.validate_configuration(module_config, cfg)
-            if not is_valid:
-                console.print(f"[red]Error:[/red] {error_msg}")
-                ctx.exit(1)
+    # Determine which configurations to run using shared helper
+    configs_to_run = expand_configurations(
+        config, module_config, linter.validate_configuration, ctx
+    )
 
     # Show what we're running
     if len(configs_to_run) > 1:

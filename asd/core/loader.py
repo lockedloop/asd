@@ -10,6 +10,7 @@ import tomli
 import tomli_w
 
 from ..utils.expression import SafeExpressionEvaluator
+from ..utils.logging import get_logger
 from ..utils.validation import ParameterValidator
 from .config import (
     Configuration,
@@ -26,6 +27,8 @@ from .config import (
     ToolConfig,
 )
 from .repository import Repository
+
+logger = get_logger()
 
 
 class CircularDependencyError(Exception):
@@ -110,9 +113,9 @@ class ConfigComposer:
         # 7. Validate parameters
         validation_errors = self.param_validator.validate(params, config.parameters)
         if validation_errors:
-            print("Warning: Parameter validation errors:")
+            logger.warning("Parameter validation errors:")
             for error in validation_errors:
-                print(f"  - {error}")
+                logger.warning(f"  - {error}")
 
         return {
             "parameters": params,
@@ -172,7 +175,7 @@ class ConfigComposer:
                 try:
                     result[name] = self.loader.evaluate_expression(definition.expr, result)
                 except Exception as e:
-                    print(f"Warning: Failed to evaluate expression for {name}: {e}")
+                    logger.warning(f"Failed to evaluate expression for {name}: {e}")
 
         return result
 
@@ -222,14 +225,14 @@ class TOMLLoader:
             config = self._compose_config(data, path)
             self._cache[path] = config
             return config
-        except FileNotFoundError:
-            raise FileNotFoundError(f"TOML file not found: {path}")
-        except PermissionError:
-            raise PermissionError(f"Permission denied reading TOML file: {path}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"TOML file not found: {path}") from e
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied reading TOML file: {path}") from e
         except tomli.TOMLDecodeError as e:
-            raise ValueError(f"Invalid TOML syntax in {path}: {e}")
-        except Exception as e:
-            raise RuntimeError(f"Error loading TOML file {path}: {e}")
+            raise ValueError(f"Invalid TOML syntax in {path}: {e}") from e
+        except OSError as e:
+            raise RuntimeError(f"Error loading TOML file {path}: {e}") from e
         finally:
             self._loading_stack.pop()
 
@@ -336,6 +339,10 @@ class TOMLLoader:
     ) -> dict[str, Configuration]:
         """Extract configurations from inline parameter and define definitions.
 
+        Always ensures a "default" configuration exists, even if no inline
+        configuration values are specified. This allows users to always run
+        with the default configuration.
+
         Args:
             parameters: Processed parameters with potential inline config values
             defines: Processed defines with potential inline config values
@@ -349,6 +356,14 @@ class TOMLLoader:
             config_names.update(param.get_configuration_values().keys())
         for define in defines.values():
             config_names.update(define.get_configuration_values().keys())
+
+        # Always ensure "default" configuration exists
+        if config_names and "default" not in config_names:
+            config_names.add("default")
+
+        # If no inline configs at all, create just "default"
+        if not config_names:
+            config_names.add("default")
 
         # Build configurations
         configurations = {}

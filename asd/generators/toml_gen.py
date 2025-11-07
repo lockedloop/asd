@@ -1,5 +1,6 @@
 """TOML generation from HDL sources."""
 
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -131,14 +132,14 @@ class TOMLGenerator:
         ]
 
         visited: set[str] = set()
-        to_visit = module.instances.copy()
+        to_visit: deque[str] = deque(module.instances)
 
         # Show progress if we have dependencies to scan
         if to_visit:
             console.print(f"[dim]Scanning {len(to_visit)} dependencies...[/dim]")
 
         while to_visit:
-            inst = to_visit.pop(0)
+            inst = to_visit.popleft()
             if inst in visited:
                 continue
             visited.add(inst)
