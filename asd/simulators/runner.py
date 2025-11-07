@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import sys
-import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -188,9 +187,6 @@ class SimulationRunner:
                 print("Or test files specified in TOML simulation.tests")
             return 1
 
-        # Suppress experimental API warning from cocotb
-        warnings.filterwarnings("ignore", category=UserWarning, module="cocotb.runner")
-
         try:
             from cocotb.runner import get_runner
         except ImportError:
@@ -254,7 +250,7 @@ class SimulationRunner:
 
                 # Build the design
                 runner.build(
-                    verilog_sources=[str(s) for s in sources],
+                    sources=[str(s) for s in sources],
                     hdl_toplevel=config.top,
                     includes=[str(i) for i in includes],
                     defines=defines,
