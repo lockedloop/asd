@@ -1,15 +1,11 @@
 """Unit tests for configuration models."""
 
-import pytest
-from pydantic import ValidationError
-
 from asd.core.config import (
-    Language,
+    Configuration,
     ModuleConfig,
     ModuleSources,
     ModuleType,
     Parameter,
-    ParameterSet,
     ParameterType,
 )
 
@@ -34,24 +30,23 @@ def test_parameter_validation():
     assert param.range == (1, 10)
 
     # With allowed values
-    param = Parameter(
-        default=8, type=ParameterType.INTEGER, values=[4, 8, 16, 32]
-    )
+    param = Parameter(default=8, type=ParameterType.INTEGER, values=[4, 8, 16, 32])
     assert 8 in param.values
 
 
-def test_parameter_set():
-    """Test parameter set model."""
-    pset = ParameterSet(
+def test_configuration():
+    """Test configuration model."""
+    config = Configuration(
         name="test",
         parameters={"WIDTH": 16, "DEPTH": 32},
+        defines={},
         inherit="default",
         description="Test configuration",
     )
 
-    assert pset.name == "test"
-    assert pset.parameters["WIDTH"] == 16
-    assert pset.inherit == "default"
+    assert config.name == "test"
+    assert config.parameters["WIDTH"] == 16
+    assert config.inherit == "default"
 
 
 def test_module_config():
@@ -60,7 +55,6 @@ def test_module_config():
         name="uart",
         top="uart_top",
         type=ModuleType.RTL,
-        language=Language.SYSTEMVERILOG,
         sources=ModuleSources(
             modules=["src/uart.sv"],
             packages=["src/uart_pkg.sv"],
@@ -68,9 +62,9 @@ def test_module_config():
         parameters={
             "WIDTH": Parameter(default=8, type=ParameterType.INTEGER),
         },
-        parameter_sets={
-            "default": ParameterSet(name="default", parameters={}),
-            "test": ParameterSet(name="test", parameters={"WIDTH": 4}),
+        configurations={
+            "default": Configuration(name="default", parameters={}, defines={}),
+            "test": Configuration(name="test", parameters={"WIDTH": 4}, defines={}),
         },
     )
 
@@ -79,7 +73,7 @@ def test_module_config():
     assert config.type == ModuleType.RTL
     assert len(config.sources.modules) == 1
     assert len(config.parameters) == 1
-    assert len(config.parameter_sets) == 2
+    assert len(config.configurations) == 2
 
 
 def test_get_all_sources():
@@ -99,20 +93,20 @@ def test_get_all_sources():
     assert "mod3.sv" in sources
 
 
-def test_get_parameter_set():
-    """Test getting parameter set by name."""
+def test_get_configuration():
+    """Test getting configuration by name."""
     config = ModuleConfig(
         name="test",
         top="test_top",
-        parameter_sets={
-            "default": ParameterSet(name="default"),
-            "test": ParameterSet(name="test", parameters={"WIDTH": 4}),
+        configurations={
+            "default": Configuration(name="default", parameters={}, defines={}),
+            "test": Configuration(name="test", parameters={"WIDTH": 4}, defines={}),
         },
     )
 
-    pset = config.get_parameter_set("test")
-    assert pset is not None
-    assert pset.parameters["WIDTH"] == 4
+    cfg = config.get_configuration("test")
+    assert cfg is not None
+    assert cfg.parameters["WIDTH"] == 4
 
-    pset = config.get_parameter_set("nonexistent")
-    assert pset is None
+    cfg = config.get_configuration("nonexistent")
+    assert cfg is None

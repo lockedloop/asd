@@ -1,17 +1,17 @@
-"""Simulation runner for ASD."""
+"""Simulation runner for ASD using cocotb."""
 
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..core.config import ModuleConfig
 from ..core.loader import TOMLLoader
 from ..core.repository import Repository
 from ..utils.sources import SourceManager
-from .verilator import VerilatorSimulator
 
 
 class SimulationRunner:
-    """Coordinate simulation execution."""
+    """Coordinate simulation execution using cocotb runner API."""
 
     def __init__(self, repository: Repository, loader: TOMLLoader) -> None:
         """Initialize simulation runner.
@@ -23,66 +23,102 @@ class SimulationRunner:
         self.repo = repository
         self.loader = loader
         self.source_manager = SourceManager(repository)
-        self.simulators = {
-            "verilator": VerilatorSimulator,
-        }
+
+    def validate_configuration(
+        self, config: ModuleConfig, requested_config: str
+    ) -> tuple[bool, str]:
+        """Validate that requested configuration is allowed by tool configuration.
+
+        Args:
+            config: Module configuration
+            requested_config: Configuration name requested via CLI
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Check if configuration exists in module
+        if requested_config != "all" and requested_config not in config.configurations:
+            return (
+                False,
+                f"Configuration '{requested_config}' not found. "
+                f"Available: {', '.join(config.configurations.keys())}",
+            )
+
+        # If no simulation config, allow all configurations
+        if not config.simulation:
+            return (True, "")
+
+        # If simulation.configurations is None or empty, allow all
+        if not config.simulation.configurations:
+            return (True, "")
+
+        # If simulation.configurations contains "all", allow any configuration
+        if "all" in config.simulation.configurations:
+            return (True, "")
+
+        # Otherwise, requested config must be in the allowed list
+        if requested_config == "all":
+            # "all" means all module configurations must be in tool's allowed list
+            for cfg_name in config.configurations.keys():
+                if cfg_name not in config.simulation.configurations:
+                    return (
+                        False,
+                        f"Configuration '{cfg_name}' not supported by simulation tool. "
+                        f"Tool supports: {', '.join(config.simulation.configurations)}",
+                    )
+            return (True, "")
+        else:
+            # Single config must be in allowed list
+            if requested_config not in config.simulation.configurations:
+                return (
+                    False,
+                    f"Configuration '{requested_config}' not supported by simulation tool. "
+                    f"Tool supports: {', '.join(config.simulation.configurations)}",
+                )
+            return (True, "")
 
     def run(
         self,
         config: ModuleConfig,
+        toml_stem: str,
         simulator: str = "verilator",
-        param_set: Optional[str] = None,
-        param_overrides: Optional[Dict[str, Any]] = None,
-        test_name: Optional[str] = None,
+        configuration: str | None = None,
+        param_overrides: dict[str, Any] | None = None,
+        test_name: str | None = None,
         gui: bool = False,
         waves: bool = True,
-        parallel: Optional[int] = None,
-        build_dir: Optional[Path] = None,
+        parallel: int | None = None,
     ) -> int:
-        """Run simulation with specified configuration.
+        """Run simulation with cocotb runner API.
 
         Args:
             config: Module configuration
-            simulator: Simulator to use
-            param_set: Parameter set name
+            toml_stem: TOML file stem (for build directory naming)
+            simulator: Simulator to use (verilator, icarus, etc.)
+            configuration: Configuration name to use
             param_overrides: Parameter overrides from CLI
             test_name: Specific test to run
             gui: Run with GUI (simulator-specific)
-            waves: Generate waveforms
+            waves: Generate waveforms (default: True)
             parallel: Number of parallel tests
-            build_dir: Custom build directory
 
         Returns:
             Return code (0 for success)
         """
-        # Get simulator class
-        if simulator not in self.simulators:
-            print(f"Error: Unknown simulator '{simulator}'")
-            print(f"Available simulators: {', '.join(self.simulators.keys())}")
+        try:
+            from cocotb.runner import get_runner
+        except ImportError:
+            print("Error: cocotb is required for simulation")
+            print("Install with: pip install cocotb")
             return 1
 
-        sim_class = self.simulators[simulator]
-        sim = sim_class(build_dir=build_dir)
+        # Use default configuration if not specified
+        configuration = configuration or "default"
 
-        # Check if simulator is available
-        if not sim.is_available():
-            print(f"Error: {simulator} is not available on this system")
-            return 1
-
-        # Compose parameters for simulation
-        if param_set and config.simulation and config.simulation.parameter_set:
-            # Override with specified parameter set
-            sim_config = config.simulation.model_copy()
-            sim_config.parameter_set = param_set
-            temp_config = config.model_copy()
-            temp_config.simulation = sim_config
-            composed = self.loader.composer.compose(
-                temp_config, "simulation", param_overrides
-            )
-        else:
-            composed = self.loader.composer.compose(
-                config, "simulation", param_overrides
-            )
+        # Compose parameters and defines for the configuration
+        composed = self.loader.composer.compose(
+            config, "simulation", configuration, param_overrides
+        )
 
         parameters = composed["parameters"]
         defines = composed["defines"]
@@ -96,66 +132,144 @@ class SimulationRunner:
         # Get include directories
         includes = self.source_manager.get_include_dirs(config)
 
-        # Compile
-        from rich.console import Console
-        console = Console()
+        # Find test files (auto-discover sim_*.py or use specified tests)
+        test_files = self._find_test_files(config, test_name)
+        if not test_files:
+            print("Error: No test files found")
+            print("Expected test files matching pattern: sim_*.py")
+            if config.simulation and config.simulation.tests:
+                print("Or test files specified in TOML simulation.tests")
+            return 1
 
-        with console.status(f"[bold green]Compiling with {simulator}...[/bold green]"):
-            compile_args = []
-            if config.simulation and hasattr(config.simulation, simulator):
-                sim_config = getattr(config.simulation, simulator)
-                if sim_config:
-                    compile_args = sim_config.compile_args
+        # Create build directory: build-{toml_stem}-{configuration}/
+        build_dir = Path(f"build-{toml_stem}-{configuration}")
+        build_dir.mkdir(parents=True, exist_ok=True)
 
-            ret = sim.compile(
-                sources=sources,
-                parameters=parameters,
-                defines=defines,
-                top_module=config.top,
-                includes=includes,
-                compile_args=compile_args,
-            )
+        # Prepare environment variables with configuration
+        test_env = self._prepare_test_environment(parameters, defines, configuration)
 
-        if ret != 0:
-            return ret
+        # Get cocotb runner
+        runner = get_runner(simulator)
 
-        # Elaborate (if needed)
-        ret = sim.elaborate(config.top, parameters)
-        if ret != 0:
-            return ret
-
-        # Determine test module
-        test_module = None
-        if test_name and config.simulation and config.simulation.tests:
-            test = config.simulation.tests.get(test_name)
-            if test:
-                test_module = test.test_module
-                # Apply test-specific parameters
-                parameters.update(test.parameters)
-        elif config.simulation and config.simulation.tests:
-            # Use first test if none specified
-            first_test = next(iter(config.simulation.tests.values()), None)
-            if first_test:
-                test_module = first_test.test_module
-
-        # Run simulation
-        print(f"Running simulation...")
-        sim_args = []
-        if config.simulation and hasattr(config.simulation, simulator):
-            sim_config = getattr(config.simulation, simulator)
-            if sim_config:
-                sim_args = sim_config.sim_args
-
-        ret = sim.simulate(
-            top_module=config.top,
-            test_module=test_module,
-            waves=waves,
-            sim_args=sim_args,
+        # Build the design
+        runner.build(
+            verilog_sources=[str(s) for s in sources],
+            hdl_toplevel=config.top,
+            includes=[str(i) for i in includes],
+            defines=defines,
+            parameters=parameters,
+            build_dir=str(build_dir),
+            always=True,  # Always rebuild
         )
 
-        return ret
+        # Set up test modules
+        test_modules = []
+        for test_file in test_files:
+            # Convert file path to Python module name
+            # e.g., sim_counter.py -> sim_counter
+            module_name = test_file.stem
+            test_modules.append(module_name)
 
-    def list_tests(self, config: ModuleConfig) -> List[str]:
+        # Run tests
+        from rich.console import Console
+
+        console = Console()
+        console.print(f"[bold green]Running tests with {simulator}...[/bold green]")
+        console.print(f"Configuration: {configuration}")
+        console.print(f"Top module: {config.top}")
+        console.print(f"Test modules: {', '.join(test_modules)}")
+
+        try:
+            runner.test(
+                hdl_toplevel=config.top,
+                test_module=",".join(test_modules),
+                waves=waves,
+                gui=gui,
+                extra_env=test_env,
+                build_dir=str(build_dir),
+            )
+            return 0
+        except Exception as e:
+            print(f"Simulation failed: {e}")
+            return 1
+
+    def _find_test_files(self, config: ModuleConfig, test_name: str | None = None) -> list[Path]:
+        """Find test files for simulation.
+
+        Searches for sim_*.py files in the same directory as the sources,
+        or uses test files specified in the TOML configuration.
+
+        Args:
+            config: Module configuration
+            test_name: Specific test name to run (optional)
+
+        Returns:
+            List of test file paths
+        """
+        test_files = []
+
+        # If specific test requested and defined in config
+        if test_name and config.simulation and config.simulation.tests:
+            test_config = config.simulation.tests.get(test_name)
+            if test_config and hasattr(test_config, "test_module"):
+                # Convert module name to file path
+                test_file = Path(test_config.test_module.replace(".", "/") + ".py")
+                if test_file.exists():
+                    test_files.append(test_file)
+                else:
+                    # Try relative to repo root
+                    test_file = self.repo.root / test_file
+                    if test_file.exists():
+                        test_files.append(test_file)
+
+        # If no test files found, auto-discover sim_*.py
+        if not test_files and config.sources.modules:
+            # Search in the same directory as the first source file
+            first_source = Path(config.sources.modules[0])
+            search_dir = first_source.parent
+
+            # Look for sim_*.py files
+            test_files = list(search_dir.glob("sim_*.py"))
+
+            # Also check parent directory's tests folder
+            tests_dir = search_dir.parent / "tests"
+            if tests_dir.exists():
+                test_files.extend(tests_dir.glob("sim_*.py"))
+
+        return test_files
+
+    def _prepare_test_environment(
+        self, parameters: dict[str, Any], defines: dict[str, Any], config_name: str
+    ) -> dict[str, str]:
+        """Prepare environment variables for test execution.
+
+        Encodes configuration data as JSON in environment variables that
+        tests can access via cocotb_utils.py functions.
+
+        Args:
+            parameters: Composed parameters
+            defines: Composed defines
+            config_name: Configuration name
+
+        Returns:
+            Dictionary of environment variables
+        """
+        env = {}
+
+        # Encode parameters as JSON
+        if parameters:
+            env["COCOTB_TEST_VAR_PARAMETERS"] = json.dumps(parameters)
+
+        # Encode defines as JSON
+        if defines:
+            env["COCOTB_TEST_VAR_DEFINES"] = json.dumps(defines)
+
+        # Store configuration name
+        env["COCOTB_TEST_VAR_CONFIG_NAME"] = json.dumps(config_name)
+
+        return env
+
+    def list_tests(self, config: ModuleConfig) -> list[str]:
         """List available tests.
 
         Args:
@@ -164,17 +278,29 @@ class SimulationRunner:
         Returns:
             List of test names
         """
-        if config.simulation and config.simulation.tests:
-            return list(config.simulation.tests.keys())
-        return []
+        tests: list[str] = []
 
-    def clean(self, simulator: str = "verilator") -> None:
+        # From explicit TOML configuration
+        if config.simulation and config.simulation.tests:
+            tests.extend(config.simulation.tests.keys())
+
+        # Auto-discovered sim_*.py files
+        discovered = self._find_test_files(config)
+        for test_file in discovered:
+            tests.append(test_file.stem)
+
+        return list(set(tests))  # Remove duplicates
+
+    def clean(self, toml_stem: str, configuration: str = "default") -> None:
         """Clean simulation artifacts.
 
         Args:
-            simulator: Simulator to clean
+            toml_stem: TOML file stem
+            configuration: Configuration name
         """
-        if simulator in self.simulators:
-            sim = self.simulators[simulator]()
-            sim.clean()
-            print(f"Cleaned {simulator} build artifacts")
+        import shutil
+
+        build_dir = Path(f"build-{toml_stem}-{configuration}")
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
+            print(f"Cleaned {build_dir}")

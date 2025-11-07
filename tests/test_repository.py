@@ -3,8 +3,6 @@
 import os
 from pathlib import Path
 
-import pytest
-
 from asd.core.repository import Repository
 
 

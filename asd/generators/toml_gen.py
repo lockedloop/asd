@@ -1,23 +1,22 @@
 """TOML generation from HDL sources."""
 
-import tomli_w
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
-import click
+import tomli_w
 from rich.console import Console
 from rich.prompt import Confirm, IntPrompt, Prompt
 
 from ..core.config import (
-    Language,
+    Configuration,
     LintConfig,
     ModuleConfig,
     ModuleSources,
     ModuleType,
     Parameter,
-    ParameterSet,
     ParameterType,
     SimulationConfig,
+    TestConfig,
 )
 from ..core.repository import Repository
 from ..utils.verilog_parser import VerilogParser
@@ -37,9 +36,7 @@ class TOMLGenerator:
         self.repo = repository
         self.parser = VerilogParser()
 
-    def generate_from_top(
-        self, top_file: Path, scan_deps: bool = True
-    ) -> ModuleConfig:
+    def generate_from_top(self, top_file: Path, scan_deps: bool = True) -> ModuleConfig:
         """Generate TOML from top-level module.
 
         Args:
@@ -66,30 +63,25 @@ class TOMLGenerator:
                 type=param_type,
             )
 
-        # Determine language
-        language = Language.SYSTEMVERILOG if top_path.suffix == ".sv" else Language.VERILOG
-
         # Build configuration
         config = ModuleConfig(
             name=module.name,
             top=module.name,
             type=ModuleType.RTL,
-            language=language,
             sources=ModuleSources(
                 modules=[str(self.repo.relative_path(s)) for s in sources],
                 includes=[str(self.repo.relative_path(Path(inc))) for inc in module.includes],
             ),
             parameters=parameters,
-            parameter_sets={
-                "default": ParameterSet(name="default", parameters={}),
+            configurations={
+                "default": Configuration(name="default", parameters={}, defines={}),
             },
             simulation=SimulationConfig(
-                simulator="verilator",
-                parameter_set="default",
+                configurations=["default"],
             ),
             lint=LintConfig(
                 tool="verilator",
-                parameter_set="default",
+                configurations=["default"],
             ),
         )
 
@@ -113,9 +105,7 @@ class TOMLGenerator:
         else:
             return ParameterType.INTEGER
 
-    def _find_sources(
-        self, top_file: Path, module: Any, scan_deps: bool
-    ) -> List[Path]:
+    def _find_sources(self, top_file: Path, module: Any, scan_deps: bool) -> list[Path]:
         """Find all source files.
 
         Args:
@@ -140,7 +130,7 @@ class TOMLGenerator:
             self.repo.root / "rtl",
         ]
 
-        visited: Set[str] = set()
+        visited: set[str] = set()
         to_visit = module.instances.copy()
 
         # Show progress if we have dependencies to scan
@@ -175,7 +165,7 @@ class TOMLGenerator:
                         try:
                             sub_module = self.parser.parse_file(pf)
                             to_visit.extend(sub_module.instances)
-                        except Exception:
+                        except Exception:  # nosec B110
                             # Not a module file, might be package or include
                             pass
                         break
@@ -195,7 +185,7 @@ class TOMLGenerator:
         output = self.repo.resolve_path(output)
 
         # Build TOML structure
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "asd": {
                 "version": "1.0",
                 "generated": True,
@@ -204,7 +194,6 @@ class TOMLGenerator:
                 "name": config.name,
                 "top": config.top,
                 "type": config.type.value,
-                "language": config.language.value,
             },
         }
 
@@ -223,7 +212,7 @@ class TOMLGenerator:
             data["parameters"] = {}
             for name, param in config.parameters.items():
                 param_dict = {"default": param.default}
-                if param.type != ParameterType.INTEGER:
+                if param.type and param.type != ParameterType.INTEGER:
                     param_dict["type"] = param.type.value
                 if param.description:
                     param_dict["description"] = param.description
@@ -233,29 +222,33 @@ class TOMLGenerator:
                     param_dict["values"] = param.values
                 data["parameters"][name] = param_dict
 
-        # Add parameter sets
-        if config.parameter_sets:
-            data["parameter_sets"] = {}
-            for name, pset in config.parameter_sets.items():
-                if pset.parameters:
-                    data["parameter_sets"][name] = pset.parameters
-                else:
-                    data["parameter_sets"][name] = {}
+        # Add configurations
+        if config.configurations:
+            data["configurations"] = {}
+            for name, cfg in config.configurations.items():
+                cfg_data: dict[str, Any] = {}
+                if cfg.parameters:
+                    cfg_data["parameters"] = cfg.parameters
+                if cfg.defines:
+                    cfg_data["defines"] = cfg.defines
+                if cfg.inherit:
+                    cfg_data["inherit"] = cfg.inherit
+                if cfg.description:
+                    cfg_data["description"] = cfg.description
+                data["configurations"][name] = cfg_data if cfg_data else {}
 
         # Add tools
         data["tools"] = {}
 
         if config.simulation:
-            data["tools"]["simulation"] = {
-                "simulator": config.simulation.simulator,
-            }
-            if config.simulation.parameter_set:
-                data["tools"]["simulation"]["parameter_set"] = config.simulation.parameter_set
+            data["tools"]["simulation"] = {}
+            if config.simulation.configurations:
+                data["tools"]["simulation"]["configurations"] = config.simulation.configurations
 
         if config.lint:
             data["tools"]["lint"] = {}
-            if config.lint.parameter_set:
-                data["tools"]["lint"]["parameter_set"] = config.lint.parameter_set
+            if config.lint.configurations:
+                data["tools"]["lint"]["configurations"] = config.lint.configurations
 
         # Write file
         with open(output, "wb") as f:
@@ -305,9 +298,10 @@ class TOMLGenerator:
                             test_params[param_name] = new_val
 
                 if test_params:
-                    config.parameter_sets["test"] = ParameterSet(
+                    config.configurations["test"] = Configuration(
                         name="test",
                         parameters=test_params,
+                        defines={},
                     )
 
         # Ask about simulation tests
@@ -321,10 +315,10 @@ class TOMLGenerator:
                 config.simulation = SimulationConfig()
 
             config.simulation.tests = {
-                "default": {
-                    "test_module": test_module,
-                    "timeout": 60,
-                }
+                "default": TestConfig(
+                    test_module=test_module,
+                    timeout=60,
+                )
             }
 
         # Ask about synthesis
@@ -333,7 +327,7 @@ class TOMLGenerator:
 
             config.synthesis = SynthesisConfig(
                 tool="vivado",
-                parameter_set="default",
+                configurations=["default"],
             )
 
             part = Prompt.ask("FPGA part (optional)", default="")

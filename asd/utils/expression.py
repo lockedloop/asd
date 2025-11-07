@@ -7,14 +7,15 @@ import ast
 import math
 import operator
 import re
-from typing import Any, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 
 class SafeExpressionEvaluator:
     """Safely evaluate mathematical expressions."""
 
     # Allowed operators
-    OPERATORS = {
+    OPERATORS: dict[type[ast.operator] | type[ast.unaryop], Callable[..., Any]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -33,7 +34,7 @@ class SafeExpressionEvaluator:
     }
 
     # Allowed functions
-    FUNCTIONS = {
+    FUNCTIONS: dict[str, Callable[..., Any]] = {
         "log2": lambda x: int(math.log2(x)),
         "log10": math.log10,
         "log": math.log,
@@ -48,7 +49,7 @@ class SafeExpressionEvaluator:
         "round": round,
     }
 
-    def __init__(self, context: Optional[Dict[str, Any]] = None):
+    def __init__(self, context: dict[str, Any] | None = None):
         """Initialize evaluator with optional context.
 
         Args:
@@ -89,6 +90,7 @@ class SafeExpressionEvaluator:
         Returns:
             Expression with simple variable names
         """
+
         def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             # If the variable exists in context, replace with its value
@@ -142,12 +144,12 @@ class SafeExpressionEvaluator:
 
         # Unary operations
         elif isinstance(node, ast.UnaryOp):
-            op_type = type(node.op)
-            if op_type not in self.OPERATORS:
-                raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
+            unary_op_type: type[ast.operator] | type[ast.unaryop] = type(node.op)
+            if unary_op_type not in self.OPERATORS:
+                raise ValueError(f"Unsupported unary operator: {unary_op_type.__name__}")
 
             operand = self._eval_node(node.operand)
-            return self.OPERATORS[op_type](operand)
+            return self.OPERATORS[unary_op_type](operand)
 
         # Function calls
         elif isinstance(node, ast.Call):
@@ -204,7 +206,7 @@ class SafeExpressionEvaluator:
             raise ValueError(f"Unsupported expression type: {type(node).__name__}")
 
 
-def evaluate_expression(expression: str, context: Dict[str, Any]) -> Any:
+def evaluate_expression(expression: str, context: dict[str, Any]) -> Any:
     """Convenience function to evaluate an expression.
 
     Args:

@@ -3,7 +3,7 @@
 Provides parameter and configuration validation.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..core.config import Parameter, ParameterType
 
@@ -11,9 +11,7 @@ from ..core.config import Parameter, ParameterType
 class ParameterValidator:
     """Validate parameter values against their definitions."""
 
-    def validate(
-        self, parameters: Dict[str, Any], definitions: Dict[str, Parameter]
-    ) -> List[str]:
+    def validate(self, parameters: dict[str, Any], definitions: dict[str, Parameter]) -> list[str]:
         """Validate parameter values against definitions.
 
         Args:
@@ -34,10 +32,11 @@ class ParameterValidator:
             definition = definitions[name]
 
             # Validate type
-            type_error = self._validate_type(name, value, definition.type)
-            if type_error:
-                errors.append(type_error)
-                continue  # Skip further validation if type is wrong
+            if definition.type is not None:
+                type_error = self._validate_type(name, value, definition.type)
+                if type_error:
+                    errors.append(type_error)
+                    continue  # Skip further validation if type is wrong
 
             # Validate range
             if definition.range:
@@ -53,9 +52,7 @@ class ParameterValidator:
 
         return errors
 
-    def _validate_type(
-        self, name: str, value: Any, expected_type: ParameterType
-    ) -> Optional[str]:
+    def _validate_type(self, name: str, value: Any, expected_type: ParameterType) -> str | None:
         """Validate parameter type.
 
         Args:
@@ -91,9 +88,7 @@ class ParameterValidator:
 
         return None
 
-    def _validate_range(
-        self, name: str, value: Any, value_range: tuple
-    ) -> Optional[str]:
+    def _validate_range(self, name: str, value: Any, value_range: tuple[Any, ...]) -> str | None:
         """Validate parameter is within range.
 
         Args:
@@ -120,9 +115,7 @@ class ParameterValidator:
 
         return None
 
-    def _validate_values(
-        self, name: str, value: Any, allowed_values: List[Any]
-    ) -> Optional[str]:
+    def _validate_values(self, name: str, value: Any, allowed_values: list[Any]) -> str | None:
         """Validate parameter is in allowed values list.
 
         Args:
@@ -149,11 +142,11 @@ class ParameterValidator:
 class ConfigValidator:
     """Validate module configuration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize configuration validator."""
         self.param_validator = ParameterValidator()
 
-    def validate_config(self, config: Any) -> List[str]:
+    def validate_config(self, config: Any) -> list[str]:
         """Validate a module configuration.
 
         Args:
@@ -175,44 +168,39 @@ class ConfigValidator:
         if not config.sources.modules and not config.sources.packages:
             errors.append("At least one source file is required")
 
-        # Validate parameter sets
-        for set_name, param_set in config.parameter_sets.items():
+        # Validate configurations
+        for cfg_name, cfg in config.configurations.items():
             # Check inheritance
-            if param_set.inherit and param_set.inherit not in config.parameter_sets:
+            if cfg.inherit and cfg.inherit not in config.configurations:
                 errors.append(
-                    f"Parameter set '{set_name}' inherits from unknown set '{param_set.inherit}'"
+                    f"Configuration '{cfg_name}' inherits from unknown config '{cfg.inherit}'"
                 )
 
-            # Validate parameter values in set
-            set_errors = self.param_validator.validate(
-                param_set.parameters, config.parameters
-            )
-            for error in set_errors:
-                errors.append(f"In parameter set '{set_name}': {error}")
+            # Validate parameter values in configuration
+            cfg_errors = self.param_validator.validate(cfg.parameters, config.parameters)
+            for error in cfg_errors:
+                errors.append(f"In configuration '{cfg_name}': {error}")
 
         # Validate tool configurations
-        if config.simulation and config.simulation.parameter_set:
-            if config.simulation.parameter_set not in config.parameter_sets:
-                errors.append(
-                    f"Simulation uses unknown parameter set '{config.simulation.parameter_set}'"
-                )
+        if config.simulation and config.simulation.configurations:
+            for cfg_name in config.simulation.configurations:
+                if cfg_name not in config.configurations:
+                    errors.append(f"Simulation references unknown configuration '{cfg_name}'")
 
-        if config.lint and config.lint.parameter_set:
-            if config.lint.parameter_set not in config.parameter_sets:
-                errors.append(f"Lint uses unknown parameter set '{config.lint.parameter_set}'")
+        if config.lint and config.lint.configurations:
+            for cfg_name in config.lint.configurations:
+                if cfg_name not in config.configurations:
+                    errors.append(f"Lint references unknown configuration '{cfg_name}'")
 
-        if config.synthesis and config.synthesis.parameter_set:
-            if config.synthesis.parameter_set not in config.parameter_sets:
-                errors.append(
-                    f"Synthesis uses unknown parameter set '{config.synthesis.parameter_set}'"
-                )
+        if config.synthesis and config.synthesis.configurations:
+            for cfg_name in config.synthesis.configurations:
+                if cfg_name not in config.configurations:
+                    errors.append(f"Synthesis references unknown configuration '{cfg_name}'")
 
         return errors
 
 
-def validate_parameters(
-    parameters: Dict[str, Any], definitions: Dict[str, Parameter]
-) -> List[str]:
+def validate_parameters(parameters: dict[str, Any], definitions: dict[str, Parameter]) -> list[str]:
     """Convenience function to validate parameters.
 
     Args:

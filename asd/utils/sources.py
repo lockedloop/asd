@@ -5,7 +5,6 @@ Common functionality for preparing and managing HDL source files.
 
 import os
 from pathlib import Path
-from typing import List, Set
 
 from ..core.config import ModuleConfig
 from ..core.repository import Repository
@@ -22,7 +21,7 @@ class SourceManager:
         """
         self.repo = repository
 
-    def prepare_sources(self, config: ModuleConfig) -> List[Path]:
+    def prepare_sources(self, config: ModuleConfig) -> list[Path]:
         """Prepare source file paths from configuration.
 
         Args:
@@ -60,7 +59,7 @@ class SourceManager:
 
         return sources
 
-    def get_include_dirs(self, config: ModuleConfig) -> List[Path]:
+    def get_include_dirs(self, config: ModuleConfig) -> list[Path]:
         """Get unique include directories from configuration.
 
         Args:
@@ -70,7 +69,7 @@ class SourceManager:
             List of unique include directory paths
         """
         includes = []
-        seen: Set[Path] = set()
+        seen: set[Path] = set()
 
         for include_file in config.sources.includes:
             path = self.repo.resolve_path(include_file)
@@ -99,7 +98,7 @@ class SourceManager:
 
         return includes
 
-    def find_dependencies(self, source_file: Path, search_dirs: List[Path]) -> List[Path]:
+    def find_dependencies(self, source_file: Path, search_dirs: list[Path]) -> list[Path]:
         """Find dependencies for a source file.
 
         Args:
@@ -109,14 +108,14 @@ class SourceManager:
         Returns:
             List of dependency file paths
         """
-        dependencies = []
+        dependencies: list[Path] = []
 
         # This could be enhanced with actual parsing
         # For now, it's a placeholder for future dependency resolution
 
         return dependencies
 
-    def get_compilation_order(self, sources: List[Path]) -> List[Path]:
+    def get_compilation_order(self, sources: list[Path]) -> list[Path]:
         """Determine optimal compilation order for source files.
 
         Args:
@@ -142,7 +141,7 @@ class SourceManager:
         # Return packages first, then others, then modules
         return packages + others + modules
 
-    def validate_sources(self, sources: List[Path]) -> bool:
+    def validate_sources(self, sources: list[Path]) -> bool:
         """Validate that source files are readable.
 
         Args:

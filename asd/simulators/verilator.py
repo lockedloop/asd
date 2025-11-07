@@ -2,9 +2,9 @@
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import SimulatorBase
 
@@ -12,17 +12,17 @@ from .base import SimulatorBase
 class VerilatorSimulator(SimulatorBase):
     """Verilator simulator for both linting and simulation."""
 
-    def __init__(self, build_dir: Optional[Path] = None) -> None:
+    def __init__(self, build_dir: Path | None = None) -> None:
         """Initialize Verilator simulator.
 
         Args:
             build_dir: Build directory path
         """
         super().__init__("verilator", build_dir)
-        self.exe_name: Optional[str] = None
+        self.exe_name: str | None = None
         self.verilator_path = self._find_verilator()
 
-    def _find_verilator(self) -> Optional[Path]:
+    def _find_verilator(self) -> Path | None:
         """Find Verilator executable.
 
         Returns:
@@ -57,12 +57,12 @@ class VerilatorSimulator(SimulatorBase):
 
     def compile(
         self,
-        sources: List[Path],
-        parameters: Dict[str, Any],
-        defines: Dict[str, Any],
+        sources: list[Path],
+        parameters: dict[str, Any],
+        defines: dict[str, Any],
         lint_only: bool = False,
-        top_module: Optional[str] = None,
-        includes: Optional[List[Path]] = None,
+        top_module: str | None = None,
+        includes: list[Path] | None = None,
         verbose: bool = False,
         **kwargs: Any,
     ) -> int:
@@ -98,8 +98,10 @@ class VerilatorSimulator(SimulatorBase):
                     "--build",  # Build immediately
                     "--timing",  # Timing support
                     "--trace-vcd",  # VCD traces
-                    "-j", "0",  # Use all cores
-                    "--Mdir", str(self.build_dir),
+                    "-j",
+                    "0",  # Use all cores
+                    "--Mdir",
+                    str(self.build_dir),
                 ]
             )
 
@@ -139,13 +141,13 @@ class VerilatorSimulator(SimulatorBase):
 
         # Print command if verbose
         if verbose:
-            print(f"\n[Verilator Command]")
+            print("\n[Verilator Command]")
             print(" ".join(cmd))
             print()
 
         # Execute
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 cmd,
                 capture_output=True,
                 text=True,
@@ -153,7 +155,7 @@ class VerilatorSimulator(SimulatorBase):
             )
 
             if result.returncode != 0:
-                print(f"Verilator compilation failed:")
+                print("Verilator compilation failed:")
                 if result.stderr:
                     print(result.stderr)
                 if result.stdout:
@@ -168,9 +170,7 @@ class VerilatorSimulator(SimulatorBase):
             print(f"Error running Verilator: {e}")
             return 1
 
-    def elaborate(
-        self, top_module: str, parameters: Dict[str, Any], **kwargs: Any
-    ) -> int:
+    def elaborate(self, top_module: str, parameters: dict[str, Any], **kwargs: Any) -> int:
         """Verilator combines compilation and elaboration.
 
         Args:
@@ -187,7 +187,7 @@ class VerilatorSimulator(SimulatorBase):
     def simulate(
         self,
         top_module: str,
-        test_module: Optional[str] = None,
+        test_module: str | None = None,
         timeout: int = 3600,
         waves: bool = True,
         **kwargs: Any,
@@ -247,7 +247,7 @@ class VerilatorSimulator(SimulatorBase):
 
         # Run simulation
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 cmd,
                 env=env,
                 capture_output=True,
@@ -257,7 +257,7 @@ class VerilatorSimulator(SimulatorBase):
             )
 
             if result.returncode != 0:
-                print(f"Simulation failed:")
+                print("Simulation failed:")
                 if result.stderr:
                     print(result.stderr)
                 if result.stdout:
@@ -373,11 +373,11 @@ int main(int argc, char** argv) {{
 
     def lint(
         self,
-        sources: List[Path],
-        parameters: Dict[str, Any],
-        defines: Dict[str, Any],
-        includes: Optional[List[Path]] = None,
-        extra_args: Optional[List[str]] = None,
+        sources: list[Path],
+        parameters: dict[str, Any],
+        defines: dict[str, Any],
+        includes: list[Path] | None = None,
+        extra_args: list[str] | None = None,
         verbose: bool = False,
         **kwargs: Any,
     ) -> int:

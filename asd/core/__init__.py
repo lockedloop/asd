@@ -1,7 +1,7 @@
 """Core ASD components."""
 
-from .repository import Repository
-from .config import ModuleConfig, Parameter, ParameterSet
+from .config import Configuration, Define, ModuleConfig, Parameter
 from .loader import TOMLLoader
+from .repository import Repository
 
-__all__ = ["Repository", "ModuleConfig", "Parameter", "ParameterSet", "TOMLLoader"]
+__all__ = ["Repository", "ModuleConfig", "Parameter", "Configuration", "Define", "TOMLLoader"]

@@ -3,13 +3,13 @@
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class SimulatorBase(ABC):
     """Abstract base class for simulator interfaces."""
 
-    def __init__(self, name: str, build_dir: Optional[Path] = None) -> None:
+    def __init__(self, name: str, build_dir: Path | None = None) -> None:
         """Initialize simulator with name and build directory.
 
         Args:
@@ -23,9 +23,9 @@ class SimulatorBase(ABC):
     @abstractmethod
     def compile(
         self,
-        sources: List[Path],
-        parameters: Dict[str, Any],
-        defines: Dict[str, Any],
+        sources: list[Path],
+        parameters: dict[str, Any],
+        defines: dict[str, Any],
         **kwargs: Any,
     ) -> int:
         """Compile HDL sources.
@@ -42,9 +42,7 @@ class SimulatorBase(ABC):
         pass
 
     @abstractmethod
-    def elaborate(
-        self, top_module: str, parameters: Dict[str, Any], **kwargs: Any
-    ) -> int:
+    def elaborate(self, top_module: str, parameters: dict[str, Any], **kwargs: Any) -> int:
         """Elaborate design.
 
         Args:
@@ -61,7 +59,7 @@ class SimulatorBase(ABC):
     def simulate(
         self,
         top_module: str,
-        test_module: Optional[str] = None,
+        test_module: str | None = None,
         **kwargs: Any,
     ) -> int:
         """Run simulation.
@@ -98,7 +96,5 @@ class SimulatorBase(ABC):
         Returns:
             True if simulator can be used
         """
-        import shutil
-
         # Override in subclasses for specific checks
         return True

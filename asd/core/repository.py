@@ -5,22 +5,21 @@ Handles repository root detection and path resolution.
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 class Repository:
     """Manages repository root detection and path resolution."""
 
-    def __init__(self, root: Optional[Path] = None) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         """Initialize repository with optional explicit root.
 
         Args:
             root: Explicit repository root path. If None, will auto-detect.
         """
         self.root = self._find_root(root)
-        self._cache: Dict[str, Path] = {}
+        self._cache: dict[str, Path] = {}
 
-    def _find_root(self, explicit_root: Optional[Path] = None) -> Path:
+    def _find_root(self, explicit_root: Path | None = None) -> Path:
         """Find repository root using .asd-root marker.
 
         Strategy order:
@@ -96,7 +95,7 @@ class Repository:
             # Path is outside repository
             return path
 
-    def find_files(self, pattern: str, directory: Optional[Path] = None) -> List[Path]:
+    def find_files(self, pattern: str, directory: Path | None = None) -> list[Path]:
         """Find files matching a glob pattern.
 
         Args:

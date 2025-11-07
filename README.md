@@ -1,7 +1,10 @@
 # ASD
 
-ASD is the name of the tool, because I learned blind typing by playing computer games, so by default I rest my left hand on the (W)ASD keys, instead of SDF.
-A TOML-based build system for HDL projects that provides a unified CLI for all HDL development tasks, with Verilator as the default simulator.
+ASD is the name of the tool, because I learned blind typing by playing
+computer games, so by default I rest my left hand on the (W)ASD keys,
+instead of SDF.
+A TOML-based build system for HDL projects that provides a unified CLI
+for all HDL development tasks, with Verilator as the default simulator.
 
 ## Features
 
@@ -38,6 +41,7 @@ asd init --name my_project
 ```
 
 This creates:
+
 - Project directory structure
 - Example TOML configuration
 - Sample SystemVerilog module
@@ -72,7 +76,6 @@ version = "1.0"
 name = "uart_controller"
 top = "uart_top"
 type = "rtl"
-language = "systemverilog"
 
 [module.sources]
 packages = ["src/uart_pkg.sv"]
@@ -83,24 +86,23 @@ CLK_FREQ = { default = 100000000, type = "integer" }
 BAUD_RATE = { default = 115200, values = [9600, 115200, 921600] }
 FIFO_DEPTH = { default = 16, range = [8, 128] }
 
-[parameter_sets.default]
+[configurations.default]
 # Uses all defaults
 
-[parameter_sets.test]
-CLK_FREQ = 1000000  # Lower frequency for faster simulation
-FIFO_DEPTH = 8
+[configurations.test]
+parameters = { CLK_FREQ = 1000000, FIFO_DEPTH = 8 }
 
 [tools.simulation]
-simulator = "verilator"
-parameter_set = "default"
+configurations = ["default", "test"]
 
 [tools.lint]
-parameter_set = "default"
+configurations = ["default"]
 ```
 
 ## CLI Commands
 
 ### `asd init`
+
 Initialize a new ASD project in the current directory.
 
 ```bash
@@ -108,6 +110,7 @@ asd init --name my_project
 ```
 
 ### `asd generate`
+
 Generate TOML configuration from HDL sources.
 
 ```bash
@@ -122,6 +125,7 @@ asd generate --top src/top_module.sv --interactive
 ```
 
 ### `asd sim`
+
 Run simulation with specified configuration.
 
 ```bash
@@ -145,6 +149,7 @@ asd sim module.toml --test my_test
 ```
 
 ### `asd lint`
+
 Run lint checks on HDL sources.
 
 ```bash
@@ -159,6 +164,7 @@ asd lint module.toml --param-set test
 ```
 
 ### `asd clean`
+
 Clean build artifacts.
 
 ```bash
@@ -170,6 +176,7 @@ asd clean --simulator verilator
 ```
 
 ### `asd info`
+
 Display information about a TOML configuration.
 
 ```bash
@@ -185,31 +192,35 @@ asd info module.toml --format yaml
 
 ## Parameter Composition
 
-ASD's parameter composition system allows you to define parameters once and reuse them across different contexts:
+ASD's parameter composition system allows you to define parameters once
+and reuse them across different contexts:
 
 1. **Base defaults** - Defined in `[parameters]`
-2. **Parameter sets** - Named configurations in `[parameter_sets]`
+2. **Configurations** - Named collections of overrides in `[configurations]`
 3. **Tool overrides** - Tool-specific values
 4. **CLI overrides** - Command-line parameters
 
 Example:
+
 ```toml
 [parameters]
 WIDTH = { default = 8 }
 
-[parameter_sets.test]
-WIDTH = 4  # Override for testing
+[configurations.test]
+parameters = { WIDTH = 4 }
 
 [tools.simulation]
-parameter_set = "test"  # Use test values
+configurations = ["test"]  # Tool supports test configuration
 parameters = { WIDTH = 2 }  # Further override
 
-# Final value: WIDTH = 2
+# When running: asd sim module.toml -c test
+# Final value: WIDTH = 2 (CLI selects config, tool overrides apply)
 ```
 
 ## Repository Detection
 
 ASD automatically detects the repository root using (in order):
+
 1. Explicit `--root` parameter
 2. `ASD_ROOT` environment variable
 3. `.asd-root` marker file
@@ -228,6 +239,7 @@ ASD uses Verilator as the default simulator:
 - No license required
 
 Verilator must be installed separately:
+
 ```bash
 # macOS
 brew install verilator
@@ -274,7 +286,7 @@ mypy asd
 
 ## Architecture
 
-```
+```text
 asd/
 ├── core/           # Core components
 │   ├── repository.py   # Repository management
@@ -300,6 +312,7 @@ MIT License - See [LICENSE](./LICENSE) file for details
 ## Contributing
 
 Contributions are welcome! Please:
+
 1. Fork the repository
 2. Create a feature branch
 3. Add tests for new functionality
@@ -309,6 +322,7 @@ Contributions are welcome! Please:
 ## Support
 
 For issues and questions:
+
 - Open an issue on GitHub
 - Check existing issues first
 - Provide minimal reproducible examples

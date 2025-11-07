@@ -1,7 +1,7 @@
 """Command-line interface for ASD."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import click
 from rich.console import Console
@@ -35,7 +35,8 @@ def get_repository(ctx: click.Context) -> Repository:
         if ctx.obj.get("verbose"):
             console.print(f"[dim]Repository root: {ctx.obj['repo'].root}[/dim]")
 
-    return ctx.obj["repo"]
+    repo: Repository = ctx.obj["repo"]
+    return repo
 
 
 def get_loader(ctx: click.Context) -> TOMLLoader:
@@ -51,14 +52,15 @@ def get_loader(ctx: click.Context) -> TOMLLoader:
         repo = get_repository(ctx)
         ctx.obj["loader"] = TOMLLoader(repo)
 
-    return ctx.obj["loader"]
+    loader: TOMLLoader = ctx.obj["loader"]
+    return loader
 
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--root", type=Path, help="Repository root directory")
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, root: Optional[Path]) -> None:
+def cli(ctx: click.Context, verbose: bool, root: Path | None) -> None:
     """ASD - Automated System Design tool for HDL projects."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
@@ -86,7 +88,9 @@ def init() -> None:
     console.print("\n[bold green]ASD repository initialized![/bold green]")
     console.print("\nNext steps:")
     console.print("  1. Create your HDL sources and TOML configuration")
-    console.print("  2. Or auto-generate from existing HDL: [cyan]asd auto --top src/module.sv[/cyan]")
+    console.print(
+        "  2. Or auto-generate from existing HDL: [cyan]asd auto --top src/module.sv[/cyan]"
+    )
 
 
 @cli.command()
@@ -98,7 +102,7 @@ def init() -> None:
 def auto(
     ctx: click.Context,
     top: str,
-    output: Optional[str],
+    output: str | None,
     scan: bool,
     interactive: bool,
 ) -> None:
@@ -139,7 +143,7 @@ def auto(
         console.print(f"  Parameters: {len(config.parameters)}")
 
 
-def parse_params(params: Tuple[str, ...]) -> Dict[str, Any]:
+def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
     """Parse parameter overrides from CLI.
 
     Args:
@@ -148,7 +152,7 @@ def parse_params(params: Tuple[str, ...]) -> Dict[str, Any]:
     Returns:
         Dictionary of parameter overrides
     """
-    overrides = {}
+    overrides: dict[str, Any] = {}
     for param in params:
         if "=" not in param:
             console.print(f"[yellow]Warning:[/yellow] Invalid parameter format: {param}")
@@ -168,30 +172,43 @@ def parse_params(params: Tuple[str, ...]) -> Dict[str, Any]:
 
 @cli.command()
 @click.argument("toml_file", type=Path)
-@click.option("--config", "-c", default="default", help="Configuration name")
-@click.option("--param-set", "-p", help="Parameter set to use")
+@click.option(
+    "--config",
+    "-c",
+    multiple=True,
+    default=["default"],
+    help="Configuration(s) to run (can specify multiple: -c default -c wide, or use -c all)",
+)
 @click.option("--param", multiple=True, help="Override parameter (KEY=VALUE)")
-@click.option("--simulator", "-s", default="verilator", help="Simulator")
+@click.option(
+    "--simulator", "-s", default="verilator", help="Simulator to use (verilator, icarus, etc.)"
+)
 @click.option("--test", "-t", help="Specific test to run")
 @click.option("--gui", is_flag=True, help="Run with GUI")
-@click.option("--waves", is_flag=True, default=True, help="Generate waveforms")
+@click.option("--no-waves", is_flag=True, help="Disable waveform generation")
 @click.option("--parallel", type=int, help="Run tests in parallel")
 @click.option("--list-tests", is_flag=True, help="List available tests")
 @click.pass_context
 def sim(
     ctx: click.Context,
     toml_file: Path,
-    config: str,
-    param_set: Optional[str],
-    param: Tuple[str, ...],
+    config: tuple[str, ...],
+    param: tuple[str, ...],
     simulator: str,
-    test: Optional[str],
+    test: str | None,
     gui: bool,
-    waves: bool,
-    parallel: Optional[int],
+    no_waves: bool,
+    parallel: int | None,
     list_tests: bool,
 ) -> None:
-    """Run simulation."""
+    """Run simulation with cocotb.
+
+    Examples:
+        asd sim module.toml                    # Run with default configuration
+        asd sim module.toml -c wide            # Run with wide configuration
+        asd sim module.toml -c default -c wide # Run multiple configurations
+        asd sim module.toml -c all             # Run all configurations
+    """
     loader = get_loader(ctx)
     repo = get_repository(ctx)
 
@@ -218,52 +235,124 @@ def sim(
     # Parse parameter overrides
     param_overrides = parse_params(param)
 
-    # Show configuration if verbose
-    if ctx.obj["verbose"]:
-        console.print(f"[dim]Module: {module_config.name}[/dim]")
-        console.print(f"[dim]Top: {module_config.top}[/dim]")
-        console.print(f"[dim]Simulator: {simulator}[/dim]")
-        if param_set:
-            console.print(f"[dim]Parameter set: {param_set}[/dim]")
+    # Get TOML file stem for build directory naming
+    toml_stem = toml_file.stem
 
     # Create runner
     runner = SimulationRunner(repo, loader)
 
-    # Run simulation
-    result = runner.run(
-        module_config,
-        simulator=simulator,
-        param_set=param_set,
-        param_overrides=param_overrides,
-        test_name=test,
-        gui=gui,
-        waves=waves,
-        parallel=parallel,
-    )
+    # Waves enabled by default, disabled by --no-waves
+    waves = not no_waves
 
-    if result == 0:
-        console.print("[green]✓[/green] Simulation passed")
+    # Determine which configurations to run
+    configs_to_run: list[str] = []
+
+    # Handle "all" keyword
+    if "all" in config:
+        # Validate that "all" is allowed
+        is_valid, error_msg = runner.validate_configuration(module_config, "all")
+        if not is_valid:
+            console.print(f"[red]Error:[/red] {error_msg}")
+            ctx.exit(1)
+
+        # Expand to all module configurations
+        configs_to_run = (
+            list(module_config.configurations.keys())
+            if module_config.configurations
+            else ["default"]
+        )
     else:
-        console.print(f"[red]✗[/red] Simulation failed with code {result}")
-        ctx.exit(result)
+        # Use specified configurations
+        configs_to_run = list(config)
+
+        # Validate each requested configuration
+        for cfg in configs_to_run:
+            is_valid, error_msg = runner.validate_configuration(module_config, cfg)
+            if not is_valid:
+                console.print(f"[red]Error:[/red] {error_msg}")
+                ctx.exit(1)
+
+    # Show what we're running
+    if len(configs_to_run) > 1:
+        console.print(
+            f"[bold]Running simulation for configurations: {', '.join(configs_to_run)}[/bold]"
+        )
+
+    # Run simulations
+    all_passed = True
+    for cfg in configs_to_run:
+        if len(configs_to_run) > 1:
+            console.print(f"\n[cyan]→ Configuration: {cfg}[/cyan]")
+        elif ctx.obj["verbose"]:
+            console.print(f"[dim]Module: {module_config.name}[/dim]")
+            console.print(f"[dim]Top: {module_config.top}[/dim]")
+            console.print(f"[dim]Simulator: {simulator}[/dim]")
+            console.print(f"[dim]Configuration: {cfg}[/dim]")
+
+        result = runner.run(
+            module_config,
+            toml_stem=toml_stem,
+            simulator=simulator,
+            configuration=cfg,
+            param_overrides=param_overrides,
+            test_name=test,
+            gui=gui,
+            waves=waves,
+            parallel=parallel,
+        )
+
+        if result != 0:
+            all_passed = False
+            if len(configs_to_run) > 1:
+                console.print(f"[red]✗[/red] Simulation failed for configuration '{cfg}'")
+            else:
+                console.print(f"[red]✗[/red] Simulation failed with code {result}")
+        else:
+            if len(configs_to_run) > 1:
+                console.print(f"[green]✓[/green] Simulation passed for configuration '{cfg}'")
+            else:
+                console.print("[green]✓[/green] Simulation passed")
+
+    if not all_passed:
+        ctx.exit(1)
 
 
 @cli.command()
 @click.argument("toml_file", type=Path)
-@click.option("--param-set", "-p", default="default", help="Parameter set to use (default: 'default', use 'all' for all sets)")
-@click.option("--param", multiple=True, help="Override parameters (KEY=VALUE, can be specified multiple times)")
-@click.option("--extra-args", help="Pass additional arguments to underlying linter (quoted string, e.g., \"-Wno-WIDTH -Wno-UNUSED\")")
+@click.option(
+    "--config",
+    "-c",
+    multiple=True,
+    default=["default"],
+    help="Configuration(s) to lint (can specify multiple: -c default -c wide, or use -c all)",
+)
+@click.option(
+    "--param",
+    multiple=True,
+    help="Override parameters (KEY=VALUE, can be specified multiple times)",
+)
+@click.option(
+    "--extra-args",
+    help='Pass additional arguments to linter (e.g., "-Wno-WIDTH -Wno-UNUSED")',
+)
 @click.option("--verbose", "-v", is_flag=True, help="Print the full linter command being executed")
 @click.pass_context
 def lint(
     ctx: click.Context,
     toml_file: Path,
-    param_set: str,
-    param: Tuple[str, ...],
-    extra_args: Optional[str],
+    config: tuple[str, ...],
+    param: tuple[str, ...],
+    extra_args: str | None,
     verbose: bool,
 ) -> None:
-    """Lint HDL sources."""
+    """Lint HDL sources.
+
+    Examples:
+        asd lint module.toml                    # Lint with default configuration
+        asd lint module.toml -c wide            # Lint with wide configuration
+        asd lint module.toml -c default -c wide # Lint multiple configurations
+        asd lint module.toml -c all             # Lint all configurations
+    """
     loader = get_loader(ctx)
     repo = get_repository(ctx)
 
@@ -282,57 +371,80 @@ def lint(
     linter = Linter(repo, loader)
 
     # Parse extra arguments from quoted string
-    extra_args_list: List[str] = []
+    extra_args_list: list[str] = []
     if extra_args:
         import shlex
+
         extra_args_list = shlex.split(extra_args)
 
-    # Check if linting all parameter sets
-    if param_set == "all":
-        console.print("[bold]Linting all parameter sets...[/bold]")
-        # Get all parameter sets from config
-        param_sets = list(module_config.parameter_sets.keys()) if module_config.parameter_sets else ["default"]
+    # Determine which configurations to run
+    configs_to_run: list[str] = []
 
-        all_passed = True
-        for pset in param_sets:
-            console.print(f"\n[cyan]→ Parameter set: {pset}[/cyan]")
-            result = linter.lint(
-                module_config,
-                param_set=pset,
-                param_overrides=param_overrides,
-                extra_args=extra_args_list,
-                verbose=verbose,
-            )
-            if result != 0:
-                all_passed = False
-                console.print(f"[red]✗[/red] Lint failed for parameter set '{pset}' with {result} issue(s)")
-            else:
-                console.print(f"[green]✓[/green] No lint issues found for parameter set '{pset}'")
-
-        if not all_passed:
+    # Handle "all" keyword
+    if "all" in config:
+        # Validate that "all" is allowed
+        is_valid, error_msg = linter.validate_configuration(module_config, "all")
+        if not is_valid:
+            console.print(f"[red]Error:[/red] {error_msg}")
             ctx.exit(1)
+
+        # Expand to all module configurations
+        configs_to_run = (
+            list(module_config.configurations.keys())
+            if module_config.configurations
+            else ["default"]
+        )
     else:
-        # Run linting for single parameter set
-        console.print(f"[bold]Running lint checks with parameter set '{param_set}'...[/bold]")
+        # Use specified configurations
+        configs_to_run = list(config)
+
+        # Validate each requested configuration
+        for cfg in configs_to_run:
+            is_valid, error_msg = linter.validate_configuration(module_config, cfg)
+            if not is_valid:
+                console.print(f"[red]Error:[/red] {error_msg}")
+                ctx.exit(1)
+
+    # Show what we're running
+    if len(configs_to_run) > 1:
+        console.print(f"[bold]Linting configurations: {', '.join(configs_to_run)}[/bold]")
+
+    # Run linting
+    all_passed = True
+    for cfg in configs_to_run:
+        if len(configs_to_run) > 1:
+            console.print(f"\n[cyan]→ Configuration: {cfg}[/cyan]")
+
         result = linter.lint(
             module_config,
-            param_set=param_set,
+            configuration=cfg,
             param_overrides=param_overrides,
             extra_args=extra_args_list,
             verbose=verbose,
         )
 
-        if result == 0:
-            console.print("[green]✓[/green] No lint issues found")
+        if result != 0:
+            all_passed = False
+            if len(configs_to_run) > 1:
+                console.print(
+                    f"[red]✗[/red] Lint failed for configuration '{cfg}' with {result} issue(s)"
+                )
+            else:
+                console.print(f"[red]✗[/red] Lint failed with {result} issue(s)")
         else:
-            console.print(f"[red]✗[/red] Lint failed with {result} issue(s)")
-            ctx.exit(1)
+            if len(configs_to_run) > 1:
+                console.print(f"[green]✓[/green] No lint issues found for configuration '{cfg}'")
+            else:
+                console.print("[green]✓[/green] No lint issues found")
+
+    if not all_passed:
+        ctx.exit(1)
 
 
 @cli.command()
 @click.option("--all", "clean_all", is_flag=True, help="Clean all artifacts")
 @click.option("--simulator", help="Clean specific simulator")
-def clean(clean_all: bool, simulator: Optional[str]) -> None:
+def clean(clean_all: bool, simulator: str | None) -> None:
     """Clean build artifacts."""
     build_dir = Path("build")
 
@@ -384,7 +496,6 @@ def info(ctx: click.Context, toml_file: Path, format: str) -> None:
         table.add_row("Name", config.name)
         table.add_row("Top", config.top)
         table.add_row("Type", config.type.value)
-        table.add_row("Language", config.language.value)
 
         console.print(table)
 
@@ -400,30 +511,36 @@ def info(ctx: click.Context, toml_file: Path, format: str) -> None:
                 param_table.add_row(
                     name,
                     str(param.default),
-                    param.type.value,
+                    param.type.value if param.type else "auto",
                     param.description or "",
                 )
 
             console.print(param_table)
 
-        # Parameter Sets
-        if config.parameter_sets:
-            psets_table = Table(title="Parameter Sets")
-            psets_table.add_column("Set Name", style="cyan")
-            psets_table.add_column("Overrides")
-            psets_table.add_column("Description")
+        # Configurations
+        if config.configurations:
+            configs_table = Table(title="Configurations")
+            configs_table.add_column("Name", style="cyan")
+            configs_table.add_column("Parameters")
+            configs_table.add_column("Defines")
+            configs_table.add_column("Description")
 
-            for set_name, pset in config.parameter_sets.items():
-                overrides_str = ", ".join(f"{k}={v}" for k, v in pset.parameters.items())
-                if not overrides_str:
-                    overrides_str = "(uses all defaults)"
-                psets_table.add_row(
-                    set_name,
-                    overrides_str,
-                    pset.description or "",
+            for config_name, cfg in config.configurations.items():
+                params_str = ", ".join(f"{k}={v}" for k, v in cfg.parameters.items())
+                if not params_str:
+                    params_str = "(defaults)"
+                defines_str = ", ".join(f"{k}={v}" for k, v in cfg.defines.items())
+                if not defines_str:
+                    defines_str = "(defaults)"
+
+                configs_table.add_row(
+                    config_name,
+                    params_str,
+                    defines_str,
+                    cfg.description or "",
                 )
 
-            console.print(psets_table)
+            console.print(configs_table)
 
         # Sources
         if config.sources.modules:
@@ -437,7 +554,7 @@ def info(ctx: click.Context, toml_file: Path, format: str) -> None:
         print(json.dumps(config.model_dump(), indent=2))
 
     elif format == "yaml":
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         print(yaml.dump(config.model_dump(), default_flow_style=False))
 

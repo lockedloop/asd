@@ -6,7 +6,7 @@ Extracts module interfaces, parameters, and dependencies.
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Set
+from typing import Any
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Port:
     name: str
     direction: str  # input, output, inout
     type: str  # logic, wire, reg
-    width: Optional[str] = None
+    width: str | None = None
 
 
 @dataclass
@@ -33,11 +33,11 @@ class Module:
     """Verilog module representation."""
 
     name: str
-    parameters: List[Parameter] = field(default_factory=list)
-    ports: List[Port] = field(default_factory=list)
-    instances: List[str] = field(default_factory=list)  # Module instantiations
-    packages: List[str] = field(default_factory=list)  # Package imports
-    includes: List[str] = field(default_factory=list)  # Include files
+    parameters: list[Parameter] = field(default_factory=list)
+    ports: list[Port] = field(default_factory=list)
+    instances: list[str] = field(default_factory=list)  # Module instantiations
+    packages: list[str] = field(default_factory=list)  # Package imports
+    includes: list[str] = field(default_factory=list)  # Include files
 
 
 class VerilogParser:
@@ -66,9 +66,7 @@ class VerilogParser:
         self.include_pattern = re.compile(r'`include\s+"([^"]+)"')
 
         # Instance pattern - matches module instantiation
-        self.instance_pattern = re.compile(
-            r"(\w+)\s+(?:#\s*\(.*?\))?\s*\w+\s*\(", re.DOTALL
-        )
+        self.instance_pattern = re.compile(r"(\w+)\s+(?:#\s*\(.*?\))?\s*\w+\s*\(", re.DOTALL)
 
         # Keywords to exclude from instances
         self.keywords = {
@@ -173,7 +171,7 @@ class VerilogParser:
         content = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
         return content
 
-    def _parse_parameters(self, param_block: str, full_content: str) -> List[Parameter]:
+    def _parse_parameters(self, param_block: str, full_content: str) -> list[Parameter]:
         """Parse parameter definitions.
 
         Args:
@@ -221,7 +219,7 @@ class VerilogParser:
         else:
             return "integer"
 
-    def _parse_ports(self, port_block: str, full_content: str) -> List[Port]:
+    def _parse_ports(self, port_block: str, full_content: str) -> list[Port]:
         """Parse module ports.
 
         Args:
@@ -259,7 +257,7 @@ class VerilogParser:
 
         return ports
 
-    def _find_instances(self, content: str) -> List[str]:
+    def _find_instances(self, content: str) -> list[str]:
         """Find module instantiations.
 
         Args:
@@ -269,7 +267,7 @@ class VerilogParser:
             List of instantiated module names
         """
         instances = []
-        seen: Set[str] = set()
+        seen: set[str] = set()
 
         for match in self.instance_pattern.finditer(content):
             module_name = match.group(1)
@@ -278,9 +276,8 @@ class VerilogParser:
             if module_name not in self.keywords and module_name not in seen:
                 # Basic heuristic: if it starts with uppercase, likely a module
                 # or if it contains underscore and doesn't start with $
-                if (
-                    module_name[0].isupper()
-                    or ("_" in module_name and not module_name.startswith("$"))
+                if module_name[0].isupper() or (
+                    "_" in module_name and not module_name.startswith("$")
                 ):
                     instances.append(module_name)
                     seen.add(module_name)
@@ -336,7 +333,7 @@ class VerilogParser:
         # Return as string if all else fails
         return value
 
-    def extract_dependencies(self, path: Path) -> List[str]:
+    def extract_dependencies(self, path: Path) -> list[str]:
         """Extract all dependencies from a file.
 
         Args:

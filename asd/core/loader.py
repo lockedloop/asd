@@ -3,9 +3,8 @@
 Handles loading, inheritance, and parameter composition.
 """
 
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import tomli
 import tomli_w
@@ -13,18 +12,18 @@ import tomli_w
 from ..utils.expression import SafeExpressionEvaluator
 from ..utils.validation import ParameterValidator
 from .config import (
-    ASDConfig,
-    ASDMetadata,
+    Configuration,
+    Define,
     Dependency,
     LintConfig,
     ModuleConfig,
     ModuleSources,
     ModuleType,
     Parameter,
-    ParameterSet,
     SimulationConfig,
     SynthesisConfig,
     TestConfig,
+    ToolConfig,
 )
 from .repository import Repository
 
@@ -51,13 +50,15 @@ class ConfigComposer:
         self,
         config: ModuleConfig,
         tool_name: str,
-        cli_overrides: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Compose final parameters for a tool.
+        configuration_name: str | None = None,
+        cli_overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Compose final parameters and defines for a tool configuration.
 
         Args:
             config: Module configuration
             tool_name: Tool to compose for (simulation, lint, synthesis)
+            configuration_name: Specific configuration to use
             cli_overrides: Command-line parameter overrides
 
         Returns:
@@ -65,11 +66,12 @@ class ConfigComposer:
         """
         cli_overrides = cli_overrides or {}
 
-        # 1. Start with parameter defaults
+        # 1. Start with parameter and define defaults
         params = {name: p.default for name, p in config.parameters.items()}
+        defines = {name: d.default for name, d in config.defines.items()}
 
         # 2. Get tool configuration
-        tool_config = None
+        tool_config: ToolConfig | None = None
         if tool_name == "simulation" and config.simulation:
             tool_config = config.simulation
         elif tool_name == "lint" and config.lint:
@@ -81,19 +83,23 @@ class ConfigComposer:
             # Return defaults if no tool config
             return {
                 "parameters": params,
-                "defines": {},
+                "defines": defines,
                 "tool_config": {},
             }
 
-        # 3. Apply parameter set if specified
-        if tool_config.parameter_set:
-            param_set = config.parameter_sets.get(tool_config.parameter_set)
-            if param_set:
-                params = self._apply_parameter_set(params, param_set, config.parameter_sets)
+        # 3. Apply configuration if specified
+        if configuration_name and configuration_name != "default":
+            configuration = config.configurations.get(configuration_name)
+            if configuration:
+                params, defines = self._apply_configuration(
+                    params, defines, configuration, config.configurations
+                )
 
         # 4. Apply tool-specific overrides
         if tool_config.parameters:
             params.update(tool_config.parameters)
+        if tool_config.defines:
+            defines.update(tool_config.defines)
 
         # 5. Apply CLI overrides
         params.update(cli_overrides)
@@ -108,46 +114,47 @@ class ConfigComposer:
             for error in validation_errors:
                 print(f"  - {error}")
 
-        # 8. Get defines
-        defines = tool_config.defines if tool_config else {}
-
         return {
             "parameters": params,
             "defines": defines,
             "tool_config": tool_config.model_dump() if tool_config else {},
         }
 
-    def _apply_parameter_set(
+    def _apply_configuration(
         self,
-        base_params: Dict[str, Any],
-        param_set: ParameterSet,
-        all_sets: Dict[str, ParameterSet],
-    ) -> Dict[str, Any]:
-        """Apply parameter set with inheritance.
+        base_params: dict[str, Any],
+        base_defines: dict[str, Any],
+        configuration: Configuration,
+        all_configs: dict[str, Configuration],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Apply configuration with inheritance.
 
         Args:
             base_params: Base parameters to start with
-            param_set: Parameter set to apply
-            all_sets: All available parameter sets
+            base_defines: Base defines to start with
+            configuration: Configuration to apply
+            all_configs: All available configurations
 
         Returns:
-            Updated parameters
+            Tuple of (updated parameters, updated defines)
         """
-        result = base_params.copy()
+        params = base_params.copy()
+        defines = base_defines.copy()
 
         # Handle inheritance
-        if param_set.inherit and param_set.inherit in all_sets:
-            parent = all_sets[param_set.inherit]
-            result = self._apply_parameter_set(result, parent, all_sets)
+        if configuration.inherit and configuration.inherit in all_configs:
+            parent = all_configs[configuration.inherit]
+            params, defines = self._apply_configuration(params, defines, parent, all_configs)
 
-        # Apply this set's parameters
-        result.update(param_set.parameters)
+        # Apply this configuration's parameters and defines
+        params.update(configuration.parameters)
+        defines.update(configuration.defines)
 
-        return result
+        return params, defines
 
     def _evaluate_all_expressions(
-        self, params: Dict[str, Any], definitions: Dict[str, Parameter]
-    ) -> Dict[str, Any]:
+        self, params: dict[str, Any], definitions: dict[str, Parameter]
+    ) -> dict[str, Any]:
         """Evaluate all parameter expressions.
 
         Args:
@@ -180,8 +187,8 @@ class TOMLLoader:
             repository: Repository instance for path resolution
         """
         self.repo = repository
-        self._cache: Dict[Path, ModuleConfig] = {}
-        self._loading_stack: List[Path] = []
+        self._cache: dict[Path, ModuleConfig] = {}
+        self._loading_stack: list[Path] = []
         self.composer = ConfigComposer(self)
 
     def load(self, path: Path | str) -> ModuleConfig:
@@ -226,7 +233,7 @@ class TOMLLoader:
         finally:
             self._loading_stack.pop()
 
-    def _compose_config(self, data: Dict[str, Any], base_path: Path) -> ModuleConfig:
+    def _compose_config(self, data: dict[str, Any], base_path: Path) -> ModuleConfig:
         """Compose configuration with inheritance and overlays.
 
         Args:
@@ -248,17 +255,18 @@ class TOMLLoader:
             resources=sources_data.get("resources", []),
         )
 
-        # Process parameters
+        # Process parameters and defines
         parameters = self._process_parameters(data.get("parameters", {}))
+        defines = self._process_defines(data.get("defines", {}))
 
-        # Extract inline parameter sets from parameters
-        inline_param_sets = self._extract_inline_parameter_sets(parameters)
+        # Extract inline configurations from both parameters and defines
+        inline_configs = self._extract_inline_configurations(parameters, defines)
 
-        # Process explicit parameter sets with inheritance
-        explicit_param_sets = self._process_parameter_sets(data.get("parameter_sets", {}))
+        # Process explicit configurations with inheritance
+        explicit_configs = self._process_configurations(data.get("configurations", {}))
 
-        # Merge inline and explicit parameter sets (explicit wins on conflict)
-        param_sets = self._merge_parameter_sets(inline_param_sets, explicit_param_sets)
+        # Merge inline and explicit configurations (explicit wins on conflict)
+        configurations = self._merge_configurations(inline_configs, explicit_configs)
 
         # Process dependencies
         dependencies = self._process_dependencies(module_data.get("dependencies", {}))
@@ -274,11 +282,11 @@ class TOMLLoader:
             name=module_data.get("name", "unknown"),
             top=module_data.get("top", "top"),
             type=ModuleType(module_data.get("type", "rtl")),
-            language=module_data.get("language", "systemverilog"),
             description=module_data.get("description"),
             sources=sources,
             parameters=parameters,
-            parameter_sets=param_sets,
+            defines=defines,
+            configurations=configurations,
             dependencies=dependencies,
             simulation=simulation,
             lint=lint,
@@ -287,7 +295,7 @@ class TOMLLoader:
 
         return config
 
-    def _process_parameters(self, params_data: Dict[str, Any]) -> Dict[str, Parameter]:
+    def _process_parameters(self, params_data: dict[str, Any]) -> dict[str, Parameter]:
         """Process parameter definitions.
 
         Args:
@@ -305,95 +313,131 @@ class TOMLLoader:
                 parameters[name] = Parameter(default=param_data)
         return parameters
 
-    def _extract_inline_parameter_sets(
-        self, parameters: Dict[str, Parameter]
-    ) -> Dict[str, ParameterSet]:
-        """Extract parameter sets from inline parameter definitions.
+    def _process_defines(self, defines_data: dict[str, Any]) -> dict[str, Define]:
+        """Process define definitions.
 
         Args:
-            parameters: Processed parameters with potential inline set values
+            defines_data: Raw define data
 
         Returns:
-            Dictionary of parameter sets extracted from inline values
+            Processed defines
         """
-        # Collect all parameter set names
-        param_set_names: Set[str] = set()
+        defines = {}
+        for name, define_data in defines_data.items():
+            if isinstance(define_data, dict):
+                defines[name] = Define(**define_data)
+            else:
+                # Simple value
+                defines[name] = Define(default=define_data)
+        return defines
+
+    def _extract_inline_configurations(
+        self, parameters: dict[str, Parameter], defines: dict[str, Define]
+    ) -> dict[str, Configuration]:
+        """Extract configurations from inline parameter and define definitions.
+
+        Args:
+            parameters: Processed parameters with potential inline config values
+            defines: Processed defines with potential inline config values
+
+        Returns:
+            Dictionary of configurations extracted from inline values
+        """
+        # Collect all configuration names from both parameters and defines
+        config_names: set[str] = set()
         for param in parameters.values():
-            param_set_names.update(param.get_parameter_set_values().keys())
+            config_names.update(param.get_configuration_values().keys())
+        for define in defines.values():
+            config_names.update(define.get_configuration_values().keys())
 
-        # Build parameter sets
-        param_sets = {}
-        for set_name in param_set_names:
-            set_params = {}
+        # Build configurations
+        configurations = {}
+        for config_name in config_names:
+            config_params = {}
+            config_defines = {}
+
+            # Extract parameter values for this configuration
             for param_name, param in parameters.items():
-                set_values = param.get_parameter_set_values()
-                if set_name in set_values:
-                    set_params[param_name] = set_values[set_name]
+                param_values = param.get_configuration_values()
+                if config_name in param_values:
+                    config_params[param_name] = param_values[config_name]
 
-            param_sets[set_name] = ParameterSet(
-                name=set_name,
-                parameters=set_params,
-                description=f"Auto-generated from inline parameter definitions",
+            # Extract define values for this configuration
+            for define_name, define in defines.items():
+                define_values = define.get_configuration_values()
+                if config_name in define_values:
+                    config_defines[define_name] = define_values[config_name]
+
+            configurations[config_name] = Configuration(
+                name=config_name,
+                parameters=config_params,
+                defines=config_defines,
+                description="Auto-generated from inline definitions",
             )
 
-        return param_sets
+        return configurations
 
-    def _merge_parameter_sets(
-        self, inline: Dict[str, ParameterSet], explicit: Dict[str, ParameterSet]
-    ) -> Dict[str, ParameterSet]:
-        """Merge inline and explicit parameter sets.
+    def _merge_configurations(
+        self, inline: dict[str, Configuration], explicit: dict[str, Configuration]
+    ) -> dict[str, Configuration]:
+        """Merge inline and explicit configurations.
 
         Args:
-            inline: Parameter sets extracted from inline definitions
-            explicit: Explicitly defined parameter sets
+            inline: Configurations extracted from inline definitions
+            explicit: Explicitly defined configurations
 
         Returns:
-            Merged parameter sets (explicit wins on conflict)
+            Merged configurations (explicit wins on conflict)
         """
-        # Start with inline sets
+        # Start with inline configurations
         merged = inline.copy()
 
-        # Merge explicit sets (they take precedence)
-        for name, explicit_set in explicit.items():
+        # Merge explicit configurations (they take precedence)
+        for name, explicit_config in explicit.items():
             if name in merged:
-                # Merge parameters: explicit wins
+                # Merge parameters and defines: explicit wins
                 inline_params = merged[name].parameters.copy()
-                inline_params.update(explicit_set.parameters)
+                inline_params.update(explicit_config.parameters)
+                inline_defines = merged[name].defines.copy()
+                inline_defines.update(explicit_config.defines)
 
-                merged[name] = ParameterSet(
+                merged[name] = Configuration(
                     name=name,
                     parameters=inline_params,
-                    inherit=explicit_set.inherit,  # Use explicit inherit
-                    description=explicit_set.description or merged[name].description,
+                    defines=inline_defines,
+                    inherit=explicit_config.inherit,  # Use explicit inherit
+                    description=explicit_config.description or merged[name].description,
                 )
             else:
-                merged[name] = explicit_set
+                merged[name] = explicit_config
 
         return merged
 
-    def _process_parameter_sets(self, sets_data: Dict[str, Any]) -> Dict[str, ParameterSet]:
-        """Process parameter set definitions.
+    def _process_configurations(self, configs_data: dict[str, Any]) -> dict[str, Configuration]:
+        """Process configuration definitions.
 
         Args:
-            sets_data: Raw parameter sets data
+            configs_data: Raw configuration data
 
         Returns:
-            Processed parameter sets
+            Processed configurations
         """
-        param_sets = {}
-        for name, set_data in sets_data.items():
-            if isinstance(set_data, dict):
-                param_sets[name] = ParameterSet(
+        configurations = {}
+        for name, config_data in configs_data.items():
+            if isinstance(config_data, dict):
+                configurations[name] = Configuration(
                     name=name,
-                    parameters=set_data.get("parameters", set_data),
-                    inherit=set_data.get("inherit"),
-                    description=set_data.get("description"),
+                    parameters=config_data.get("parameters", {}),
+                    defines=config_data.get("defines", {}),
+                    inherit=config_data.get("inherit"),
+                    description=config_data.get("description"),
                 )
             else:
-                param_sets[name] = ParameterSet(name=name)
-        return param_sets
+                # Empty configuration
+                configurations[name] = Configuration(name=name)
+        return configurations
 
-    def _process_dependencies(self, deps_data: Dict[str, Any]) -> Dict[str, Dependency]:
+    def _process_dependencies(self, deps_data: dict[str, Any]) -> dict[str, Dependency]:
         """Process module dependencies.
 
         Args:
@@ -410,7 +454,7 @@ class TOMLLoader:
                 dependencies[name] = Dependency(path=str(dep_data))
         return dependencies
 
-    def _process_simulation_config(self, sim_data: Dict[str, Any]) -> Optional[SimulationConfig]:
+    def _process_simulation_config(self, sim_data: dict[str, Any]) -> SimulationConfig | None:
         """Process simulation configuration.
 
         Args:
@@ -429,14 +473,13 @@ class TOMLLoader:
                 tests[test_name] = TestConfig(**test_data)
 
         return SimulationConfig(
-            simulator=sim_data.get("simulator", "verilator"),
-            parameter_set=sim_data.get("parameter_set"),
+            configurations=sim_data.get("configurations"),
             parameters=sim_data.get("parameters", {}),
             defines=sim_data.get("defines", {}),
             tests=tests,
         )
 
-    def _process_lint_config(self, lint_data: Dict[str, Any]) -> Optional[LintConfig]:
+    def _process_lint_config(self, lint_data: dict[str, Any]) -> LintConfig | None:
         """Process lint configuration.
 
         Args:
@@ -450,13 +493,13 @@ class TOMLLoader:
 
         return LintConfig(
             tool=lint_data.get("tool", "verilator"),
-            parameter_set=lint_data.get("parameter_set"),
+            configurations=lint_data.get("configurations"),
             parameters=lint_data.get("parameters", {}),
             defines=lint_data.get("defines", {}),
             fix=lint_data.get("fix", False),
         )
 
-    def _process_synthesis_config(self, synth_data: Dict[str, Any]) -> Optional[SynthesisConfig]:
+    def _process_synthesis_config(self, synth_data: dict[str, Any]) -> SynthesisConfig | None:
         """Process synthesis configuration.
 
         Args:
@@ -470,14 +513,14 @@ class TOMLLoader:
 
         return SynthesisConfig(
             tool=synth_data.get("tool", "vivado"),
-            parameter_set=synth_data.get("parameter_set"),
+            configurations=synth_data.get("configurations"),
             parameters=synth_data.get("parameters", {}),
             defines=synth_data.get("defines", {}),
             part=synth_data.get("part"),
             strategy=synth_data.get("strategy"),
         )
 
-    def evaluate_expression(self, expr: str, context: Dict[str, Any]) -> Any:
+    def evaluate_expression(self, expr: str, context: dict[str, Any]) -> Any:
         """Evaluate parameter expressions safely.
 
         Args:
@@ -506,7 +549,6 @@ class TOMLLoader:
                 "name": config.name,
                 "top": config.top,
                 "type": config.type.value,
-                "language": config.language.value,
                 "sources": {
                     "packages": config.sources.packages,
                     "modules": config.sources.modules,
@@ -523,11 +565,18 @@ class TOMLLoader:
                 for name, param in config.parameters.items()
             }
 
-        # Add parameter sets
-        if config.parameter_sets:
-            data["parameter_sets"] = {
-                name: pset.model_dump(exclude={"name"}, exclude_none=True)
-                for name, pset in config.parameter_sets.items()
+        # Add defines
+        if config.defines:
+            data["defines"] = {
+                name: define.model_dump(exclude_none=True)
+                for name, define in config.defines.items()
+            }
+
+        # Add configurations
+        if config.configurations:
+            data["configurations"] = {
+                name: cfg.model_dump(exclude={"name"}, exclude_none=True)
+                for name, cfg in config.configurations.items()
             }
 
         # Add tool configurations

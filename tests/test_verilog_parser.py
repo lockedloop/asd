@@ -1,7 +1,5 @@
 """Unit tests for Verilog parser."""
 
-from pathlib import Path
-
 import pytest
 
 from asd.utils.verilog_parser import VerilogParser

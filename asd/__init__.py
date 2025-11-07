@@ -6,7 +6,7 @@ A TOML-based build system for HDL projects.
 __version__ = "0.1.0"
 __author__ = "ASD Team"
 
+from .core.config import Configuration, Define, ModuleConfig, Parameter
 from .core.repository import Repository
-from .core.config import ModuleConfig, Parameter, ParameterSet
 
-__all__ = ["Repository", "ModuleConfig", "Parameter", "ParameterSet"]
+__all__ = ["Repository", "ModuleConfig", "Parameter", "Configuration", "Define"]
