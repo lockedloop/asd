@@ -2,13 +2,16 @@
 
 A TOML-based build system for HDL projects that provides a unified CLI
 for all hardware development tasks. Features Verilator as the default simulator,
-cocotb for testing, and an innovative configuration composition system that
+cocotb for testing, and a configuration composition system that
 eliminates parameter repetition.
 
 > **Why "ASD"?** The name comes from the WASD keys - the default home position
 > for gamers. Having learned touch typing through gaming, my left hand naturally
 > rests on WASD instead of the traditional ASDF. It's just three letters, not an
 > acronym.
+>
+> This project was created for personal use as a way to quickly bootstrap hardware
+> development on any machine. It comes without any guarantees and is provided as-is.
 
 ## Features
 
