@@ -1,5 +1,7 @@
 # ASD
 
+[![CI](https://github.com/lockedloop/asd/workflows/CI/badge.svg)](https://github.com/lockedloop/asd/actions)
+
 A TOML-based build system for HDL projects that provides a unified CLI
 for all hardware development tasks. Features Verilator as the default simulator,
 cocotb for testing, and a configuration composition system that
@@ -12,6 +14,10 @@ eliminates parameter repetition.
 >
 > This project was created for personal use as a way to quickly bootstrap hardware
 > development on any machine. It comes without any guarantees and is provided as-is.
+
+## Examples
+
+Check out [**asd-examples**](https://github.com/lockedloop/asd-examples) for working examples.
 
 ## Features
 

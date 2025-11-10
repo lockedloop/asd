@@ -1,0 +1,13 @@
+# CODEOWNERS file for ASD repository
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @lockedloop
+
+# Core configuration system
+/asd/core/ @lockedloop
+
+# Critical files
+/pyproject.toml @lockedloop
+/.github/ @lockedloop
+/CLAUDE.md @lockedloop
