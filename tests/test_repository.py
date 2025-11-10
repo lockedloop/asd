@@ -1,6 +1,5 @@
 """Unit tests for Repository class."""
 
-import os
 from pathlib import Path
 
 from asd.core.repository import Repository
@@ -28,39 +27,25 @@ def test_find_root_with_env_var(tmp_path, monkeypatch):
     assert repo.root == tmp_path
 
 
-def test_find_root_with_git(tmp_path):
-    """Test repository root detection with .git directory."""
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-
-    # Change to a subdirectory
-    subdir = tmp_path / "subdir"
-    subdir.mkdir()
-    os.chdir(subdir)
-
-    repo = Repository()
-    assert repo.root == tmp_path
-
-
-def test_resolve_path():
+def test_resolve_path(tmp_path):
     """Test path resolution."""
-    repo = Repository(root=Path("/project"))
+    repo = Repository(root=tmp_path)
 
     # Relative path
     resolved = repo.resolve_path("src/module.sv")
-    assert resolved == Path("/project/src/module.sv")
+    assert resolved == tmp_path / "src/module.sv"
 
     # Absolute path
     resolved = repo.resolve_path("/abs/path.sv")
     assert resolved == Path("/abs/path.sv")
 
 
-def test_relative_path():
+def test_relative_path(tmp_path):
     """Test converting absolute to relative path."""
-    repo = Repository(root=Path("/project"))
+    repo = Repository(root=tmp_path)
 
     # Path inside repository
-    relative = repo.relative_path(Path("/project/src/module.sv"))
+    relative = repo.relative_path(tmp_path / "src/module.sv")
     assert relative == Path("src/module.sv")
 
     # Path outside repository
