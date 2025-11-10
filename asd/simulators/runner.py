@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sys
+import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -12,14 +13,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from cocotb.runner import get_runner
-
 from ..core.config import ModuleConfig
 from ..core.loader import TOMLLoader
 from ..core.repository import Repository
 from ..utils.config_validation import validate_tool_configuration
 from ..utils.logging import get_logger
 from ..utils.sources import SourceManager
+
+# Suppress experimental API warning from cocotb.runner
+warnings.filterwarnings(
+    "ignore", message="Python runners and associated APIs are an experimental feature"
+)
+
+from cocotb.runner import get_runner  # noqa: E402
 
 logger = get_logger()
 
