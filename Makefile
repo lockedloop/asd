@@ -1,4 +1,4 @@
-.PHONY: help install test lint format type-check pre-commit clean
+.PHONY: help install test lint format type-check pre-commit ci clean
 
 help:
 	@echo "ASD Development Commands:"
@@ -9,6 +9,7 @@ help:
 	@echo "  make format        Auto-format code (black, isort, ruff --fix)"
 	@echo "  make type-check    Run mypy type checker"
 	@echo "  make pre-commit    Run all pre-commit hooks"
+	@echo "  make ci            Run full CI test suite (pre-commit + tests + mypy)"
 	@echo "  make clean         Clean build artifacts and caches"
 	@echo ""
 
@@ -50,6 +51,20 @@ pre-commit:
 pre-commit-update:
 	@echo "Updating pre-commit hooks..."
 	poetry run pre-commit autoupdate
+
+ci:
+	@echo "==================== Running CI Test Suite ===================="
+	@echo ""
+	@echo "→ Step 1/3: Running pre-commit hooks..."
+	@poetry run pre-commit run --all-files
+	@echo ""
+	@echo "→ Step 2/3: Running tests with coverage..."
+	@poetry run pytest tests/ -v --cov=asd --cov-report=term --cov-report=xml
+	@echo ""
+	@echo "→ Step 3/3: Running type checks..."
+	@poetry run mypy asd
+	@echo ""
+	@echo "✓ All CI checks passed!"
 
 clean:
 	@echo "Cleaning build artifacts..."

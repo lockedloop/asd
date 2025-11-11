@@ -23,6 +23,10 @@ warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true
 
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "cocotb.*"
+
 [tool.poetry]
 authors = ["Danilo Šijačić <danilo.sijacic@gmail.com>"]
 classifiers = [
