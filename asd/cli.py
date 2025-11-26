@@ -11,7 +11,6 @@ from .core.library import (
     DependencyResolver,
     LibraryError,
     LibraryManager,
-    LibraryNotFoundError,
 )
 from .core.loader import TOMLLoader
 from .core.repository import Repository
@@ -317,6 +316,9 @@ def sim(
     loader = get_loader(ctx)
     repo = get_repository(ctx)
 
+    # Resolve path relative to CWD (not repo root)
+    toml_file = toml_file.resolve()
+
     # Load configuration
     if not toml_file.exists():
         console.print(f"[red]Error:[/red] File not found: {toml_file}")
@@ -440,6 +442,9 @@ def lint(
     loader = get_loader(ctx)
     repo = get_repository(ctx)
 
+    # Resolve path relative to CWD (not repo root)
+    toml_file = toml_file.resolve()
+
     # Load configuration
     if not toml_file.exists():
         console.print(f"[red]Error:[/red] File not found: {toml_file}")
@@ -540,6 +545,9 @@ def clean(clean_all: bool, simulator: str | None) -> None:
 def info(ctx: click.Context, toml_file: Path, format: str) -> None:
     """Show TOML file information."""
     loader = get_loader(ctx)
+
+    # Resolve path relative to CWD (not repo root)
+    toml_file = toml_file.resolve()
 
     if not toml_file.exists():
         console.print(f"[red]Error:[/red] File not found: {toml_file}")
@@ -670,7 +678,7 @@ def lib_add(
             name=name,
         )
         console.print(f"[green]✓[/green] Added library '{lib_name}' to manifest")
-        console.print(f"\nRun [cyan]asd lib install[/cyan] to download the library")
+        console.print("\nRun [cyan]asd lib install[/cyan] to download the library")
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         ctx.exit(1)
@@ -740,7 +748,11 @@ def lib_list(ctx: click.Context) -> None:
 
     for name, spec in libraries.items():
         version_str = f"{spec.version_type}: {spec.version}"
-        status = "[green]installed[/green]" if name in installed_libs else "[yellow]not installed[/yellow]"
+        status = (
+            "[green]installed[/green]"
+            if name in installed_libs
+            else "[yellow]not installed[/yellow]"
+        )
         table.add_row(name, version_str, spec.git, status)
 
     console.print(table)
@@ -762,7 +774,9 @@ def lib_install(ctx: click.Context, name: str | None) -> None:
         if name:
             with console.status(f"[bold green]Installing library '{name}'..."):
                 lib = manager.install_library(name)
-            console.print(f"[green]✓[/green] Installed '{lib.name}' ({lib.version_type}: {lib.version})")
+            console.print(
+                f"[green]✓[/green] Installed '{lib.name}' ({lib.version_type}: {lib.version})"
+            )
         else:
             with console.status("[bold green]Installing libraries..."):
                 installed = manager.install_all()
@@ -781,7 +795,9 @@ def lib_install(ctx: click.Context, name: str | None) -> None:
             if len(deps) > len(manager.list_libraries()):
                 console.print("\n[dim]Transitive dependencies resolved[/dim]")
         except Exception as e:
-            console.print(f"[yellow]Warning:[/yellow] Could not resolve transitive dependencies: {e}")
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not resolve transitive dependencies: {e}"
+            )
 
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")

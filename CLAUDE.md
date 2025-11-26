@@ -115,7 +115,8 @@ Finds repository root using (in order):
 All paths in TOML files are relative to repository root.
 
 The `.asd/` directory structure:
-```
+
+```bash
 .asd/
 ├── libraries.toml    # Library manifest
 └── libs/             # Cloned library repositories (gitignored)
@@ -289,6 +290,7 @@ modules = [
 ```
 
 CLI commands:
+
 - `asd lib add <git-url> --tag v1.0.0` - Add a library
 - `asd lib remove <name>` - Remove a library
 - `asd lib install` - Install all libraries

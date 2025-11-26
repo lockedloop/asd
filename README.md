@@ -843,6 +843,7 @@ asd init
 ```
 
 This creates a `.asd/` directory containing:
+
 - `libraries.toml` - Empty library manifest for dependencies
 - `libs/` - Directory for cloned library repositories
 
@@ -1081,7 +1082,7 @@ The library system allows you to:
 
 When you run `asd init`, the following structure is created:
 
-```
+```bash
 your-project/
 ├── .asd/
 │   ├── libraries.toml    # Library manifest (tracks dependencies)
@@ -1118,6 +1119,7 @@ commit = "abc123def456789"
 ```
 
 Each library requires:
+
 - `git` - The Git repository URL (HTTPS or SSH)
 - One of: `tag`, `branch`, or `commit` for version specification
 
@@ -1150,7 +1152,7 @@ includes = [
 
 The `@libname/` prefix is resolved to the library's location in `.asd/libs/libname/`.
 
-### CLI Commands
+### Library CLI Commands
 
 #### `asd lib add` - Add a Library
 
@@ -1174,6 +1176,7 @@ asd lib add git@github.com:user/private-lib.git --tag v1.0.0
 ```
 
 **Library name derivation:**
+
 - `https://github.com/user/mylib.git` → `mylib`
 - `git@github.com:user/my-utils.git` → `my-utils`
 - Use `--name` to override the derived name
@@ -1216,7 +1219,8 @@ asd lib list
 ```
 
 Output:
-```
+
+```text
                     Libraries
 ┏━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ Name      ┃ Version      ┃ Git URL                               ┃ Status        ┃
@@ -1244,6 +1248,7 @@ Libraries can have their own dependencies. If a library contains its own
 **Example:**
 
 Your project depends on `mylib`:
+
 ```toml
 # .asd/libraries.toml
 [libraries.mylib]
@@ -1252,6 +1257,7 @@ tag = "v1.0.0"
 ```
 
 And `mylib` depends on `utils`:
+
 ```toml
 # mylib/.asd/libraries.toml
 [libraries.utils]
@@ -1280,6 +1286,7 @@ This means you typically don't need to explicitly list include paths from librar
 Any ASD project can be used as a library. To create a reusable library:
 
 1. **Create a standard ASD project:**
+
    ```bash
    mkdir my-rtl-lib
    cd my-rtl-lib
@@ -1287,7 +1294,8 @@ Any ASD project can be used as a library. To create a reusable library:
    ```
 
 2. **Organize your HDL sources:**
-   ```
+
+   ```text
    my-rtl-lib/
    ├── .asd/
    │   └── libraries.toml
@@ -1302,6 +1310,7 @@ Any ASD project can be used as a library. To create a reusable library:
    ```
 
 3. **Push to Git and tag releases:**
+
    ```bash
    git init
    git add .
@@ -1312,6 +1321,7 @@ Any ASD project can be used as a library. To create a reusable library:
    ```
 
 4. **Use in other projects:**
+
    ```bash
    cd other-project
    asd lib add https://github.com/user/my-rtl-lib.git --tag v1.0.0
@@ -1320,7 +1330,7 @@ Any ASD project can be used as a library. To create a reusable library:
 
 ### Complete Example Workflow
 
-**Step 1: Initialize project and add libraries**
+#### Step 1: Initialize project and add libraries
 
 ```bash
 cd my-project
@@ -1335,7 +1345,7 @@ asd lib add git@github.com:company/proprietary-ip.git --tag v3.0.0 --name compan
 asd lib install
 ```
 
-**Step 2: Create TOML configuration using library sources**
+#### Step 2: Create TOML configuration using library sources
 
 ```toml
 # rtl/my_design.toml
@@ -1374,7 +1384,7 @@ tests = ["tests/sim_top.py"]
 configurations = ["all"]
 ```
 
-**Step 3: Run simulation and lint**
+#### Step 3: Run simulation and lint
 
 ```bash
 # Run simulation

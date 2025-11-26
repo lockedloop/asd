@@ -5,12 +5,10 @@ from pathlib import Path
 import pytest
 
 from asd.core.library import (
-    CircularLibraryDependencyError,
     DependencyResolver,
     LibraryManager,
     LibraryNotFoundError,
     LibraryResolver,
-    ResolvedLibrary,
 )
 from asd.core.library_config import LibraryManifest, LibrarySpec
 from asd.core.repository import Repository

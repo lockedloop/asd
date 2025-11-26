@@ -31,13 +31,9 @@ class LibrarySpec(BaseModel):
         versions = [self.tag, self.branch, self.commit]
         count = sum(1 for v in versions if v is not None)
         if count == 0:
-            raise ValueError(
-                "One of 'tag', 'branch', or 'commit' must be specified for library"
-            )
+            raise ValueError("One of 'tag', 'branch', or 'commit' must be specified for library")
         if count > 1:
-            raise ValueError(
-                "Only one of 'tag', 'branch', or 'commit' can be specified"
-            )
+            raise ValueError("Only one of 'tag', 'branch', or 'commit' can be specified")
         return self
 
     @property
