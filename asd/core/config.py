@@ -61,7 +61,7 @@ class Parameter(BaseModel):
 
     model_config = {"extra": "allow"}  # Allow extra fields for configurations
 
-    default: Any
+    default: Any = None  # Optional - can be set by named configurations instead
     type: ParameterType | None = None  # Auto-inferred from default if not specified
     description: str | None = None
     range: tuple[int, int] | None = None

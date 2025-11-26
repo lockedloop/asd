@@ -273,11 +273,13 @@ def expand_configurations(
             ctx.exit(1)
 
         # Expand to all module configurations
-        configs_to_run = (
-            list(module_config.configurations.keys())
-            if module_config.configurations
-            else ["default"]
-        )
+        if module_config.configurations:
+            configs_to_run = list(module_config.configurations.keys())
+            # Exclude "default" if it's aliased (it's not a real config, just an alias)
+            if module_config.default_configuration and "default" in configs_to_run:
+                configs_to_run.remove("default")
+        else:
+            configs_to_run = ["default"]
     else:
         # Use specified configurations
         configs_to_run = list(config_names)
