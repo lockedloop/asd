@@ -82,15 +82,7 @@ class ConfigComposer:
         elif tool_name == "synthesis" and config.synthesis:
             tool_config = config.synthesis
 
-        if not tool_config:
-            # Return defaults if no tool config
-            return {
-                "parameters": params,
-                "defines": defines,
-                "tool_config": {},
-            }
-
-        # 3. Apply configuration if specified
+        # 3. Apply configuration if specified (even without tool_config)
         if configuration_name and configuration_name != "default":
             configuration = config.configurations.get(configuration_name)
             if configuration:
@@ -98,11 +90,12 @@ class ConfigComposer:
                     params, defines, configuration, config.configurations
                 )
 
-        # 4. Apply tool-specific overrides
-        if tool_config.parameters:
-            params.update(tool_config.parameters)
-        if tool_config.defines:
-            defines.update(tool_config.defines)
+        # 4. Apply tool-specific overrides (if tool config exists)
+        if tool_config:
+            if tool_config.parameters:
+                params.update(tool_config.parameters)
+            if tool_config.defines:
+                defines.update(tool_config.defines)
 
         # 5. Apply CLI overrides
         params.update(cli_overrides)
@@ -541,9 +534,9 @@ class TOMLLoader:
             sim_data: Raw simulation config data
 
         Returns:
-            Simulation configuration or None
+            Simulation configuration or None (only None if sim_data is None)
         """
-        if not sim_data:
+        if sim_data is None:
             return None
 
         # Process tests
@@ -576,11 +569,12 @@ class TOMLLoader:
             lint_data: Raw lint config data
 
         Returns:
-            Lint configuration or None
+            Lint configuration or None (only None if lint_data is None)
         """
-        if not lint_data:
+        if lint_data is None:
             return None
 
+        # Empty dict {} should return default LintConfig (allows [tools.lint] with no options)
         return LintConfig(
             tool=lint_data.get("tool", "verilator"),
             configurations=lint_data.get("configurations"),
@@ -596,9 +590,9 @@ class TOMLLoader:
             synth_data: Raw synthesis config data
 
         Returns:
-            Synthesis configuration or None
+            Synthesis configuration or None (only None if synth_data is None)
         """
-        if not synth_data:
+        if synth_data is None:
             return None
 
         return SynthesisConfig(

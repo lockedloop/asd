@@ -121,8 +121,15 @@ class Linter:
             logger.error(f"Unsupported lint tool '{tool}'")
             return 1
 
-        # Use Verilator for linting
-        verilator = VerilatorSimulator()
+        # Create build directory and log file
+        build_dir = Path(BUILD_DIR_NAME) / f"{toml_stem}-{configuration}"
+        build_dir.mkdir(parents=True, exist_ok=True)
+        log_file = build_dir / "asd.log"
+
+        console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
+
+        # Use Verilator for linting (pass build_dir for --Mdir)
+        verilator = VerilatorSimulator(build_dir=build_dir)
 
         if not verilator.is_available():
             logger.error("Verilator is not available on this system")
@@ -142,13 +149,6 @@ class Linter:
 
         # Get include directories
         includes = self.source_manager.get_include_dirs(config)
-
-        # Create build directory and log file
-        build_dir = Path(BUILD_DIR_NAME) / f"{toml_stem}-{configuration}"
-        build_dir.mkdir(parents=True, exist_ok=True)
-        log_file = build_dir / "asd.log"
-
-        console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
 
         # Run lint with output redirected to log file
         with _redirect_output(log_file):
