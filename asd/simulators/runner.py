@@ -25,7 +25,7 @@ warnings.filterwarnings(
     "ignore", message="Python runners and associated APIs are an experimental feature"
 )
 
-from cocotb.runner import get_runner  # noqa: E402
+from cocotb_tools.runner import get_runner  # noqa: E402
 
 logger = get_logger()
 

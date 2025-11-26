@@ -305,11 +305,7 @@ class LibraryManager:
         manifest = self.load_manifest()
         updated: list[str] = []
 
-        libraries_to_update = (
-            {name: manifest.libraries[name]}
-            if name
-            else manifest.libraries
-        )
+        libraries_to_update = {name: manifest.libraries[name]} if name else manifest.libraries
 
         for lib_name, spec in libraries_to_update.items():
             lib_dir = self.repo.libs_dir / lib_name
@@ -442,8 +438,11 @@ class LibraryManager:
             ref = f"tags/{spec.tag}"
         elif spec.branch is not None:
             ref = f"origin/{spec.branch}"
-        else:
+        elif spec.commit is not None:
             ref = spec.commit
+        else:
+            # Default to main branch if no version specified
+            ref = "origin/main"
 
         subprocess.run(
             ["git", "checkout", "--quiet", ref],
@@ -560,9 +559,7 @@ class DependencyResolver:
             for dep_name, dep_data in lib_data.get("libraries", {}).items():
                 if dep_name not in completed:
                     dep_spec = LibrarySpec(**dep_data)
-                    self._resolve_recursive(
-                        dep_name, dep_spec, resolved, in_progress, completed
-                    )
+                    self._resolve_recursive(dep_name, dep_spec, resolved, in_progress, completed)
 
         in_progress.remove(name)
         completed.add(name)
