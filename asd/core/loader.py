@@ -245,7 +245,13 @@ class TOMLLoader:
 
         Returns:
             Composed module configuration
+
+        Raises:
+            ValueError: If required fields are missing
         """
+        # Validate schema - check for required fields
+        self._validate_schema(data, base_path)
+
         # Extract module section
         module_data = data.get("module", {})
 
@@ -286,7 +292,6 @@ class TOMLLoader:
             top=module_data.get("top", "top"),
             type=ModuleType(module_data.get("type", "rtl")),
             description=module_data.get("description"),
-            base_path=base_path.parent,  # Directory containing the TOML file
             sources=sources,
             parameters=parameters,
             defines=defines,
@@ -298,6 +303,65 @@ class TOMLLoader:
         )
 
         return config
+
+    def _validate_schema(self, data: dict[str, Any], base_path: Path) -> None:
+        """Validate TOML schema has required fields.
+
+        Args:
+            data: Raw TOML data
+            base_path: Path to TOML file for error messages
+
+        Raises:
+            ValueError: If required fields are missing
+        """
+        errors: list[str] = []
+
+        # Check for [module] section
+        if "module" not in data:
+            # Check for common wrong keys to give helpful hints
+            wrong_keys = {"project", "rtl", "design"}
+            found_wrong = wrong_keys.intersection(data.keys())
+            if found_wrong:
+                errors.append(
+                    f"Missing required [module] section. "
+                    f"Found [{', '.join(found_wrong)}] instead - "
+                    f"did you mean [module]?"
+                )
+            else:
+                errors.append("Missing required [module] section")
+
+        module_data = data.get("module", {})
+
+        # Check for required module fields
+        if "name" not in module_data:
+            errors.append("Missing required field: module.name")
+
+        if "top" not in module_data:
+            errors.append("Missing required field: module.top")
+
+        # Check for sources
+        sources_data = module_data.get("sources", {})
+        if not sources_data:
+            # Check for common wrong keys
+            if "rtl" in data and "files" in data.get("rtl", {}):
+                errors.append(
+                    "Missing [module.sources] section. "
+                    "Found [rtl].files instead - use [module.sources].modules"
+                )
+            else:
+                errors.append("Missing [module.sources] section")
+        else:
+            has_sources = sources_data.get("modules") or sources_data.get("packages")
+            if not has_sources:
+                errors.append(
+                    "No source files defined. "
+                    "Add files to [module.sources].modules or [module.sources].packages"
+                )
+
+        if errors:
+            file_name = base_path.name
+            error_msg = f"Invalid TOML schema in {file_name}:\n  - " + "\n  - ".join(errors)
+            raise ValueError(error_msg)
 
     def _process_parameters(self, params_data: dict[str, Any]) -> dict[str, Parameter]:
         """Process parameter definitions.
@@ -502,6 +566,7 @@ class TOMLLoader:
             parameters=sim_data.get("parameters", {}),
             defines=sim_data.get("defines", {}),
             tests=tests,
+            vars=sim_data.get("vars", {}),
         )
 
     def _process_lint_config(self, lint_data: dict[str, Any]) -> LintConfig | None:

@@ -65,6 +65,29 @@ def get_config_name() -> str:
     return str(result)
 
 
+def get_test_vars() -> dict[str, Any]:
+    """Get test variables from TOML [tools.simulation.vars].
+
+    Test variables are user-defined values specified in the TOML configuration
+    that can be accessed by testbenches for parameterization.
+
+    Example TOML:
+        [tools.simulation.vars]
+        NUM_BEATS = 128
+        CLK_PERIOD_NS = 10
+
+    Example usage in testbench:
+        test_vars = get_test_vars()
+        NUM_BEATS = test_vars.get("NUM_BEATS", 128)
+        CLK_PERIOD_NS = test_vars.get("CLK_PERIOD_NS", 10)
+
+    Returns:
+        Dictionary of variable name to value
+    """
+    result = get_test_arg("VARS", {})
+    return result if isinstance(result, dict) else {}
+
+
 def log_config() -> None:
     """Print configuration information for debugging.
 

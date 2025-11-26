@@ -269,11 +269,22 @@ class SimulationRunner:
         console = Console()
         console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
 
-        # Copy test files to build directory
+        # Copy test files and supporting Python modules to build directory
         # This is necessary because cocotb's subprocess doesn't respect PYTHONPATH
+        copied_dirs: set[Path] = set()
         for test_file in test_files:
             dest = build_dir / test_file.name
             shutil.copy2(test_file, dest)
+
+            # Also copy other .py files from the same directory (supporting modules)
+            test_dir = test_file.parent
+            if test_dir not in copied_dirs:
+                copied_dirs.add(test_dir)
+                for py_file in test_dir.glob("*.py"):
+                    if py_file != test_file:  # Don't copy twice
+                        dest = build_dir / py_file.name
+                        if not dest.exists():
+                            shutil.copy2(py_file, dest)
 
         # Ensure asd package is in PYTHONPATH so tests can import asd.simulators.cocotb_utils
         asd_package_dir = Path(__file__).parent.parent.parent.resolve()
@@ -321,9 +332,18 @@ class SimulationRunner:
         console = Console()
         log_file_abs = log_file.resolve()
 
+        # Get test variables from simulation config
+        test_vars = None
+        if sim_context.config.simulation and sim_context.config.simulation.vars:
+            test_vars = sim_context.config.simulation.vars
+
         # Prepare test environment variables
         test_env = self._prepare_test_environment(
-            sim_context.parameters, sim_context.defines, sim_context.configuration, seed
+            sim_context.parameters,
+            sim_context.defines,
+            sim_context.configuration,
+            seed,
+            test_vars,
         )
 
         # Prepare test module list
@@ -340,13 +360,18 @@ class SimulationRunner:
                 if waves and simulator == "verilator":
                     build_args = ["--trace", "--trace-structs"]
 
+                # Prepare parameters with quoted strings for Verilator
+                formatted_params = self._format_parameters_for_simulator(
+                    sim_context.parameters, simulator
+                )
+
                 # Build the design
                 runner.build(
                     sources=[str(s) for s in sim_context.sources],
                     hdl_toplevel=sim_context.config.top,
                     includes=[str(i) for i in sim_context.includes],
                     defines=sim_context.defines,
-                    parameters=sim_context.parameters,
+                    parameters=formatted_params,
                     build_args=build_args,
                     build_dir=str(build_dir),
                     waves=waves,
@@ -386,6 +411,33 @@ class SimulationRunner:
                 self._create_timestamped_log_copy(log_file, build_dir)
 
             return 1
+
+    def _format_parameters_for_simulator(
+        self, parameters: dict[str, Any], simulator: str
+    ) -> dict[str, Any]:
+        """Format parameters for the target simulator.
+
+        Verilator requires string parameters to be quoted. This method wraps
+        string values with quotes when targeting Verilator.
+
+        Args:
+            parameters: Original parameters dict
+            simulator: Target simulator name
+
+        Returns:
+            Formatted parameters dict
+        """
+        if simulator != "verilator":
+            return parameters
+
+        formatted: dict[str, Any] = {}
+        for name, value in parameters.items():
+            if isinstance(value, str):
+                # Verilator needs string parameters quoted
+                formatted[name] = f'"{value}"'
+            else:
+                formatted[name] = value
+        return formatted
 
     def _check_simulation_results(self, log_file: Path, log_file_abs: Path, console: Any) -> int:
         """Check simulation log file for failures and errors.
@@ -526,6 +578,7 @@ class SimulationRunner:
         defines: dict[str, Any],
         config_name: str,
         seed: int,
+        test_vars: dict[str, Any] | None = None,
     ) -> dict[str, str]:
         """Prepare environment variables for test execution.
 
@@ -538,6 +591,7 @@ class SimulationRunner:
             defines: Composed defines
             config_name: Configuration name
             seed: Random seed for reproducible simulations
+            test_vars: Test variables from TOML [tools.simulation.vars]
 
         Returns:
             Dictionary of environment variables
@@ -552,6 +606,10 @@ class SimulationRunner:
         # Encode defines as JSON
         if defines:
             env["COCOTB_TEST_VAR_DEFINES"] = json.dumps(defines)
+
+        # Encode test variables as JSON
+        if test_vars:
+            env["COCOTB_TEST_VAR_VARS"] = json.dumps(test_vars)
 
         # Store configuration name
         env["COCOTB_TEST_VAR_CONFIG_NAME"] = json.dumps(config_name)

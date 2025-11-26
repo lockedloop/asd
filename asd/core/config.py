@@ -232,6 +232,7 @@ class SimulationConfig(ToolConfig):
     """
 
     tests: dict[str, TestConfig] = Field(default_factory=dict)
+    vars: dict[str, Any] = Field(default_factory=dict)
     verilator: SimulatorConfig | None = None
     modelsim: SimulatorConfig | None = None
 
@@ -259,9 +260,6 @@ class ModuleConfig(BaseModel):
     top: str
     type: ModuleType = ModuleType.RTL
     description: str | None = None
-
-    # Base path for resolving relative source paths (directory containing TOML file)
-    base_path: Path | None = None
 
     # Sources
     sources: ModuleSources = Field(default_factory=ModuleSources)
@@ -308,7 +306,6 @@ class ModuleConfig(BaseModel):
             List of include directories
         """
         # Extract directories from include files
-        from pathlib import Path
 
         dirs = set()
         for include in self.sources.includes:

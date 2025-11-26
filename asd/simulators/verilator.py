@@ -91,7 +91,7 @@ class VerilatorSimulator(SimulatorBase):
         cmd = [str(self.verilator_path)]
 
         if lint_only:
-            cmd.extend(["--lint-only", "-Wall"])
+            cmd.extend(["--lint-only", "-Wall", "-Wno-PROCASSINIT"])
         else:
             # Simulation mode
             cmd.extend(
@@ -122,7 +122,11 @@ class VerilatorSimulator(SimulatorBase):
 
         # Add parameters
         for name, value in parameters.items():
-            cmd.append(f"-G{name}={value}")
+            if isinstance(value, str):
+                # String parameters need quotes for Verilator
+                cmd.append(f'-G{name}="{value}"')
+            else:
+                cmd.append(f"-G{name}={value}")
 
         # Add defines
         for name, value in defines.items():
