@@ -4,6 +4,7 @@ Pydantic models for type-safe configuration handling.
 """
 
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -258,6 +259,9 @@ class ModuleConfig(BaseModel):
     top: str
     type: ModuleType = ModuleType.RTL
     description: str | None = None
+
+    # Base path for resolving relative source paths (directory containing TOML file)
+    base_path: Path | None = None
 
     # Sources
     sources: ModuleSources = Field(default_factory=ModuleSources)

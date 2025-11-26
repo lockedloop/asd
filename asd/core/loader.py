@@ -286,6 +286,7 @@ class TOMLLoader:
             top=module_data.get("top", "top"),
             type=ModuleType(module_data.get("type", "rtl")),
             description=module_data.get("description"),
+            base_path=base_path.parent,  # Directory containing the TOML file
             sources=sources,
             parameters=parameters,
             defines=defines,

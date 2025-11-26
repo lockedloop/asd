@@ -43,11 +43,12 @@ class SourceManager:
             self._lib_resolver = LibraryResolver(self.repo)
         return self._lib_resolver
 
-    def _resolve_source_path(self, path: str) -> Path | None:
+    def _resolve_source_path(self, path: str, base_path: Path | None = None) -> Path | None:
         """Resolve source path, handling library references.
 
         Args:
             path: Path string (local or @libname/path format)
+            base_path: Base directory for resolving relative paths (e.g., TOML file's directory)
 
         Returns:
             Resolved Path or None if not found
@@ -61,6 +62,10 @@ class SourceManager:
                 logger.warning(f"Failed to resolve library path '{path}': {e}")
                 return None
         else:
+            # Resolve relative paths against base_path (TOML directory) if provided
+            p = Path(path)
+            if not p.is_absolute() and base_path is not None:
+                return (base_path / path).resolve()
             return self.repo.resolve_path(path)
 
     def prepare_sources(self, config: ModuleConfig) -> list[Path]:
@@ -76,10 +81,11 @@ class SourceManager:
         """
         sources = []
         missing_files = []
+        base_path = config.base_path
 
         # Add packages first (they often contain definitions needed by modules)
         for pkg in config.sources.packages:
-            path = self._resolve_source_path(pkg)
+            path = self._resolve_source_path(pkg, base_path)
             if path and path.exists():
                 sources.append(path)
             else:
@@ -87,7 +93,7 @@ class SourceManager:
 
         # Add modules
         for module in config.sources.modules:
-            path = self._resolve_source_path(module)
+            path = self._resolve_source_path(module, base_path)
             if path and path.exists():
                 sources.append(path)
             else:
@@ -117,6 +123,7 @@ class SourceManager:
         """
         includes: list[Path] = []
         seen: set[Path] = set()
+        base_path = config.base_path
 
         def add_include_dir(path: Path | None) -> None:
             """Add include directory if valid and not seen."""
@@ -139,12 +146,12 @@ class SourceManager:
 
         # Process explicit include files
         for include_file in config.sources.includes:
-            path = self._resolve_source_path(include_file)
+            path = self._resolve_source_path(include_file, base_path)
             add_include_dir(path)
 
         # Check for resources that might have include files
         for resource_file in config.sources.resources:
-            path = self._resolve_source_path(resource_file)
+            path = self._resolve_source_path(resource_file, base_path)
             if path and path.suffix in [".vh", ".svh", ".h"]:
                 add_include_dir(path)
 
