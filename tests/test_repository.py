@@ -5,10 +5,10 @@ from pathlib import Path
 from asd.core.repository import Repository
 
 
-def test_find_root_with_marker(tmp_path):
-    """Test repository root detection with .asd-root marker."""
-    marker = tmp_path / ".asd-root"
-    marker.touch()
+def test_find_root_with_asd_dir(tmp_path):
+    """Test repository root detection with .asd/ directory."""
+    asd_dir = tmp_path / ".asd"
+    asd_dir.mkdir()
 
     repo = Repository(root=tmp_path)
     assert repo.root == tmp_path
@@ -100,3 +100,37 @@ def test_find_files(tmp_path):
     # Find files in src directory
     src_files = repo.find_files("*.sv", src_dir)
     assert len(src_files) == 3
+
+
+def test_asd_dir_property(tmp_path):
+    """Test asd_dir property returns correct path."""
+    repo = Repository(root=tmp_path)
+    assert repo.asd_dir == tmp_path / ".asd"
+
+
+def test_libs_dir_property(tmp_path):
+    """Test libs_dir property returns correct path."""
+    repo = Repository(root=tmp_path)
+    assert repo.libs_dir == tmp_path / ".asd" / "libs"
+
+
+def test_manifest_path_property(tmp_path):
+    """Test manifest_path property returns correct path."""
+    repo = Repository(root=tmp_path)
+    assert repo.manifest_path == tmp_path / ".asd" / "libraries.toml"
+
+
+def test_has_libraries_false(tmp_path):
+    """Test has_libraries returns False when no manifest exists."""
+    repo = Repository(root=tmp_path)
+    assert not repo.has_libraries()
+
+
+def test_has_libraries_true(tmp_path):
+    """Test has_libraries returns True when manifest exists."""
+    asd_dir = tmp_path / ".asd"
+    asd_dir.mkdir()
+    (asd_dir / "libraries.toml").touch()
+
+    repo = Repository(root=tmp_path)
+    assert repo.has_libraries()

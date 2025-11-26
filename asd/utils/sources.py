@@ -3,12 +3,18 @@
 Common functionality for preparing and managing HDL source files.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..core.config import ModuleConfig
 from ..core.repository import Repository
 from .logging import get_logger
+
+if TYPE_CHECKING:
+    from ..core.library import LibraryResolver
 
 logger = get_logger()
 
@@ -23,9 +29,44 @@ class SourceManager:
             repository: Repository instance for path resolution
         """
         self.repo = repository
+        self._lib_resolver: LibraryResolver | None = None
+
+    def _get_library_resolver(self) -> LibraryResolver | None:
+        """Get library resolver if libraries are configured.
+
+        Returns:
+            LibraryResolver instance or None if no libraries
+        """
+        if self._lib_resolver is None and self.repo.has_libraries():
+            from ..core.library import LibraryResolver
+
+            self._lib_resolver = LibraryResolver(self.repo)
+        return self._lib_resolver
+
+    def _resolve_source_path(self, path: str) -> Path | None:
+        """Resolve source path, handling library references.
+
+        Args:
+            path: Path string (local or @libname/path format)
+
+        Returns:
+            Resolved Path or None if not found
+        """
+        lib_resolver = self._get_library_resolver()
+
+        if lib_resolver and lib_resolver.is_library_path(path):
+            try:
+                return lib_resolver.resolve_path(path)
+            except Exception as e:
+                logger.warning(f"Failed to resolve library path '{path}': {e}")
+                return None
+        else:
+            return self.repo.resolve_path(path)
 
     def prepare_sources(self, config: ModuleConfig) -> list[Path]:
         """Prepare source file paths from configuration.
+
+        Handles both local paths and library paths (@libname/path).
 
         Args:
             config: Module configuration
@@ -38,16 +79,16 @@ class SourceManager:
 
         # Add packages first (they often contain definitions needed by modules)
         for pkg in config.sources.packages:
-            path = self.repo.resolve_path(pkg)
-            if path.exists():
+            path = self._resolve_source_path(pkg)
+            if path and path.exists():
                 sources.append(path)
             else:
                 missing_files.append(pkg)
 
         # Add modules
         for module in config.sources.modules:
-            path = self.repo.resolve_path(module)
-            if path.exists():
+            path = self._resolve_source_path(module)
+            if path and path.exists():
                 sources.append(path)
             else:
                 missing_files.append(module)
@@ -65,39 +106,72 @@ class SourceManager:
     def get_include_dirs(self, config: ModuleConfig) -> list[Path]:
         """Get unique include directories from configuration.
 
+        Handles both local paths and library paths (@libname/path).
+        Auto-adds include directories from library sources.
+
         Args:
             config: Module configuration
 
         Returns:
             List of unique include directory paths
         """
-        includes = []
+        includes: list[Path] = []
         seen: set[Path] = set()
 
-        for include_file in config.sources.includes:
-            path = self.repo.resolve_path(include_file)
+        def add_include_dir(path: Path | None) -> None:
+            """Add include directory if valid and not seen."""
+            if path is None:
+                return
 
             # Check if it's a directory or file
-            if path.is_dir():
-                # It's already a directory
-                inc_dir = path
+            if path.exists():
+                if path.is_dir():
+                    inc_dir = path
+                else:
+                    inc_dir = path.parent
             else:
-                # It's a file, get its parent directory
+                # File doesn't exist yet, use parent anyway
                 inc_dir = path.parent
 
-            # Add only if not seen before
-            if inc_dir not in seen:
+            if inc_dir not in seen and inc_dir.exists():
                 includes.append(inc_dir)
                 seen.add(inc_dir)
 
-        # Also check for resources that might have include files
+        # Process explicit include files
+        for include_file in config.sources.includes:
+            path = self._resolve_source_path(include_file)
+            add_include_dir(path)
+
+        # Check for resources that might have include files
         for resource_file in config.sources.resources:
-            path = self.repo.resolve_path(resource_file)
-            if path.suffix in [".vh", ".svh", ".h"]:
-                inc_dir = path.parent
-                if inc_dir not in seen:
-                    includes.append(inc_dir)
-                    seen.add(inc_dir)
+            path = self._resolve_source_path(resource_file)
+            if path and path.suffix in [".vh", ".svh", ".h"]:
+                add_include_dir(path)
+
+        # Auto-add include directories from library sources
+        lib_resolver = self._get_library_resolver()
+        if lib_resolver:
+            # Collect library names from source paths
+            lib_names: set[str] = set()
+            all_sources = config.sources.packages + config.sources.modules + config.sources.includes
+            for src in all_sources:
+                if lib_resolver.is_library_path(src):
+                    lib_name = lib_resolver.get_library_name(src)
+                    if lib_name:
+                        lib_names.add(lib_name)
+
+            # Add include directories from each library
+            for lib_name in lib_names:
+                try:
+                    lib_root = lib_resolver.get_library_root(lib_name)
+                    # Add common include directory patterns from libraries
+                    for inc_pattern in ["include", "inc", "rtl", "src"]:
+                        inc_dir = lib_root / inc_pattern
+                        if inc_dir.is_dir() and inc_dir not in seen:
+                            includes.append(inc_dir)
+                            seen.add(inc_dir)
+                except Exception:
+                    pass  # Library not installed, skip
 
         return includes
 

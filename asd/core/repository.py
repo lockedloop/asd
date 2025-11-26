@@ -19,12 +19,12 @@ class Repository:
         self.root = self._find_root(root)
 
     def _find_root(self, explicit_root: Path | None = None) -> Path:
-        """Find repository root using .asd-root marker.
+        """Find repository root using .asd/ directory.
 
         Strategy order:
         1. Explicit root parameter (--root flag)
         2. Environment variable ASD_ROOT
-        3. Search upwards for .asd-root marker file
+        3. Search upwards for .asd/ directory
 
         Args:
             explicit_root: Explicitly provided root path
@@ -33,10 +33,10 @@ class Repository:
             Resolved repository root path
 
         Raises:
-            FileNotFoundError: If .asd-root marker is not found
+            FileNotFoundError: If .asd/ directory is not found
 
         Note:
-            The .asd-root file is created by 'asd init' and is the
+            The .asd/ directory is created by 'asd init' and is the
             authoritative marker for ASD repositories. Run 'asd init'
             in your project root to initialize.
         """
@@ -52,16 +52,16 @@ class Repository:
                 raise FileNotFoundError(f"ASD_ROOT path does not exist: {env_root}")
             return env_path.resolve()
 
-        # Search upwards for .asd-root marker
+        # Search upwards for .asd/ directory
         current = Path.cwd()
         while current != current.parent:
-            if (current / ".asd-root").exists():
+            if (current / ".asd").is_dir():
                 return current
             current = current.parent
 
-        # No .asd-root found - fail with helpful error
+        # No .asd/ directory found - fail with helpful error
         raise FileNotFoundError(
-            "ASD repository not initialized. No .asd-root marker found.\n"
+            "ASD repository not initialized. No .asd/ directory found.\n"
             "Run 'asd init' in your project root to initialize the repository."
         )
 
@@ -141,6 +141,41 @@ class Repository:
         """
         resolved = self.resolve_path(path)
         return resolved.exists() and resolved.is_dir()
+
+    @property
+    def asd_dir(self) -> Path:
+        """Get .asd directory path.
+
+        Returns:
+            Path to the .asd directory
+        """
+        return self.root / ".asd"
+
+    @property
+    def libs_dir(self) -> Path:
+        """Get .asd/libs directory path for library storage.
+
+        Returns:
+            Path to the .asd/libs directory
+        """
+        return self.asd_dir / "libs"
+
+    @property
+    def manifest_path(self) -> Path:
+        """Get libraries.toml manifest path.
+
+        Returns:
+            Path to .asd/libraries.toml
+        """
+        return self.asd_dir / "libraries.toml"
+
+    def has_libraries(self) -> bool:
+        """Check if repository has library manifest.
+
+        Returns:
+            True if libraries.toml exists
+        """
+        return self.manifest_path.exists()
 
     def __str__(self) -> str:
         """String representation of repository."""

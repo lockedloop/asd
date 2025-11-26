@@ -109,11 +109,19 @@ Finds repository root using (in order):
 
 1. Explicit `--root` CLI parameter
 2. `ASD_ROOT` environment variable
-3. `.asd-root` marker file (searches upward)
-4. Git repository root (`.git` directory)
-5. **Never** falls back to current directory - raises error if no root found
+3. `.asd/` directory (searches upward)
+4. **Never** falls back to current directory - raises error if no root found
 
 All paths in TOML files are relative to repository root.
+
+The `.asd/` directory structure:
+```
+.asd/
+├── libraries.toml    # Library manifest
+└── libs/             # Cloned library repositories (gitignored)
+    ├── mylib/
+    └── otherlib/
+```
 
 ### 2. Configuration Models (`core/config.py`)
 
@@ -246,12 +254,55 @@ def get_configuration_values(self) -> dict[str, Any]:
 - Pydantic models use v2 API (`model_config`, `field_validator`)
 - Import from `typing`: `Any`, `Callable`, etc.
 
+### 6. Library Management (`core/library.py`)
+
+Manages external RTL library dependencies:
+
+- `LibraryResolver` - Resolves `@libname/path` syntax to absolute paths
+- `LibraryManager` - Manages library installation via git
+- `DependencyResolver` - Handles transitive dependencies with cycle detection
+
+Library manifest format (`.asd/libraries.toml`):
+
+```toml
+[asd]
+version = "1.0"
+
+[libraries.mylib]
+git = "https://github.com/user/mylib.git"
+tag = "v1.0.0"
+
+[libraries.otherlib]
+git = "git@github.com:user/otherlib.git"
+branch = "main"
+```
+
+Using library sources in TOML files:
+
+```toml
+[module.sources]
+modules = [
+    "rtl/my_module.sv",           # Local source
+    "@mylib/rtl/counter.sv",      # Library source
+    "@otherlib/src/fifo.sv",      # Another library
+]
+```
+
+CLI commands:
+- `asd lib add <git-url> --tag v1.0.0` - Add a library
+- `asd lib remove <name>` - Remove a library
+- `asd lib install` - Install all libraries
+- `asd lib update [name]` - Update libraries
+- `asd lib list` - List libraries
+
 ## File Structure
 
 ```text
 asd/
 ├── core/              # Core configuration and repository management
 │   ├── config.py      # Pydantic models (Parameter, Define, Configuration)
+│   ├── library.py     # Library management (LibraryManager, LibraryResolver)
+│   ├── library_config.py # Library Pydantic models (LibrarySpec, LibraryManifest)
 │   ├── loader.py      # TOML loading with composition
 │   └── repository.py  # Repository root detection
 ├── simulators/        # Simulation execution
@@ -264,10 +315,10 @@ asd/
 ├── generators/        # TOML generation
 │   └── toml_gen.py    # Generate TOML from HDL sources
 ├── utils/             # Utilities
-│   ├── sources.py     # Source file management
+│   ├── sources.py     # Source file management (handles @libname/ paths)
 │   ├── validation.py  # Configuration validation
 │   └── verilog_parser.py # Basic Verilog parsing
-└── cli.py             # Click-based CLI
+└── cli.py             # Click-based CLI (includes lib command group)
 ```
 
 ## Testing Strategy

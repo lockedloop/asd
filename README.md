@@ -63,11 +63,20 @@ Check out [**asd-examples**](https://github.com/lockedloop/asd-examples) for wor
 
 ### 📦 Project Organization
 
-- **Repository-centric** - Clear project boundaries with `.asd-root` or `.git`
+- **Repository-centric** - Clear project boundaries with `.asd/` directory
 - **Hierarchical sources** - Packages → modules → includes compilation order
 - **Dependency management** - Track inter-module dependencies in TOML
 - **Build isolation** - Each config gets its own `build-{module}-{config}` directory
 - **Resource management** - Memory files, test data tracked alongside HDL
+
+### 📚 Library Management
+
+- **External RTL libraries** - Use RTL modules from separate Git repositories
+- **Simple syntax** - Reference library sources with `@libname/path` prefix
+- **Transitive dependencies** - Libraries can depend on other libraries
+- **Git-based versioning** - Pin libraries to tags, branches, or commits
+- **Auto-include directories** - Include paths from libraries added automatically
+- **Isolated storage** - Libraries cloned to `.asd/libs/` (gitignored)
 
 ### 🎯 Workflow Integration
 
@@ -169,21 +178,19 @@ asd info rtl/counter.toml
 # Navigate to your project directory
 cd /path/to/your/project
 
-# Create the .asd-root marker file
+# Create the .asd/ directory structure
 asd init
 ```
 
 **What `asd init` does:**
 
-- Creates a `.asd-root` marker file in the current directory
+- Creates a `.asd/` directory in the current directory with:
+  - `libraries.toml` - Empty library manifest for managing dependencies
+  - `libs/` - Directory for cloned library repositories (gitignored)
 - This marks the repository root - all paths in TOML files will be relative to this
   location
 - You must run `asd` commands from within this directory (or its subdirectories)
-- Similar to how Git uses `.git`, ASD uses `.asd-root` to identify the project
-  boundary
-
-**Important:** If you're already using Git, ASD will automatically detect the `.git`
-directory as the repository root - running `asd init` is optional in this case.
+- Similar to how Git uses `.git/`, ASD uses `.asd/` to identify the project boundary
 
 ### 2. Generate TOML from existing Verilog (Experimental)
 
@@ -205,7 +212,7 @@ asd auto --top src/my_module.sv --scan --output configs/my_module.toml
 ```
 
 The `--scan` flag automatically discovers dependencies by parsing module
-instantiations. All paths in the generated TOML will be relative to the `.asd-root`
+instantiations. All paths in the generated TOML will be relative to the `.asd/`
 location.
 
 ### 3. Run simulation
@@ -825,18 +832,21 @@ asd sim module.toml -c wide --param WIDTH=32
 
 ### `asd init`
 
-Initialize a new ASD repository by creating a `.asd-root` marker file.
+Initialize a new ASD repository by creating the `.asd/` directory structure.
 
 ```bash
 # Navigate to your project directory first
 cd /path/to/your/project
 
-# Create the .asd-root marker
+# Create the .asd/ directory
 asd init
 ```
 
-This creates a `.asd-root` file in the current directory, marking it as the repository
-root for all path resolution.
+This creates a `.asd/` directory containing:
+- `libraries.toml` - Empty library manifest for dependencies
+- `libs/` - Directory for cloned library repositories
+
+This marks the current directory as the repository root for all path resolution.
 
 ### `asd auto` (Experimental)
 
@@ -856,7 +866,7 @@ asd auto --top src/top_module.sv --interactive
 asd auto --top src/top_module.sv --output my_module.toml
 ```
 
-All paths in the generated TOML will be relative to the repository root (`.asd-root` or `.git`).
+All paths in the generated TOML will be relative to the repository root (`.asd/` directory).
 
 ### `asd sim`
 
@@ -942,6 +952,34 @@ asd info module.toml --format json
 asd info module.toml --format yaml
 ```
 
+### `asd lib`
+
+Manage external RTL library dependencies. See [Library Management](#library-management)
+for full details.
+
+```bash
+# Add a library
+asd lib add https://github.com/user/mylib.git --tag v1.0.0
+asd lib add git@github.com:user/lib.git --branch main
+asd lib add https://github.com/user/lib.git --commit abc123 --name custom-name
+
+# Install all libraries from manifest
+asd lib install
+
+# Install specific library
+asd lib install mylib
+
+# Update libraries
+asd lib update        # Update all
+asd lib update mylib  # Update specific
+
+# List libraries
+asd lib list
+
+# Remove a library
+asd lib remove mylib
+```
+
 ## How Configuration Composition Works
 
 ASD eliminates parameter repetition through **inline configuration syntax**.
@@ -1023,6 +1061,345 @@ parameters = { WIDTH = 64 }  # Priority 5: Tool override
 - **Type safety** - Values validated at load time
 - **Clear precedence** - Explicit resolution order
 
+## Library Management
+
+ASD supports external RTL libraries that can be shared across multiple projects. Libraries
+are Git repositories containing reusable HDL modules that you can reference in your TOML
+configurations using the `@libname/path` syntax.
+
+### Overview
+
+The library system allows you to:
+
+- **Create reusable RTL libraries** - Any ASD project can be used as a library
+- **Share code across projects** - Use the same modules in multiple projects
+- **Version control dependencies** - Pin libraries to specific tags, branches, or commits
+- **Handle transitive dependencies** - Libraries can depend on other libraries
+- **Auto-resolve include paths** - Include directories from libraries are added automatically
+
+### Directory Structure
+
+When you run `asd init`, the following structure is created:
+
+```
+your-project/
+├── .asd/
+│   ├── libraries.toml    # Library manifest (tracks dependencies)
+│   └── libs/             # Cloned library repositories (gitignored)
+│       ├── mylib/        # Cloned from github.com/user/mylib.git
+│       └── otherlib/     # Cloned from github.com/user/otherlib.git
+├── rtl/
+│   └── my_module.sv
+└── ...
+```
+
+The `.asd/libs/` directory is automatically added to `.gitignore` - libraries are
+downloaded fresh on each machine using `asd lib install`.
+
+### Library Manifest Format
+
+The library manifest (`.asd/libraries.toml`) tracks all library dependencies:
+
+```toml
+[asd]
+version = "1.0"
+
+[libraries.mylib]
+git = "https://github.com/user/mylib.git"
+tag = "v1.0.0"
+
+[libraries.otherlib]
+git = "git@github.com:user/otherlib.git"
+branch = "main"
+
+[libraries.specific]
+git = "https://github.com/user/specific.git"
+commit = "abc123def456789"
+```
+
+Each library requires:
+- `git` - The Git repository URL (HTTPS or SSH)
+- One of: `tag`, `branch`, or `commit` for version specification
+
+### Using Library Sources in TOML
+
+Reference library sources using the `@libname/path` prefix:
+
+```toml
+[module]
+name = "my_project"
+top = "my_top"
+
+[module.sources]
+packages = [
+    "rtl/pkg/local_pkg.sv",           # Local source
+    "@mylib/src/pkg/types_pkg.sv",    # From library 'mylib'
+]
+
+modules = [
+    "rtl/my_module.sv",               # Local source
+    "@mylib/rtl/counter.sv",          # From library 'mylib'
+    "@otherlib/src/fifo.sv",          # From library 'otherlib'
+]
+
+includes = [
+    "rtl/defines.svh",                # Local include
+    "@mylib/include/common.svh",      # From library 'mylib'
+]
+```
+
+The `@libname/` prefix is resolved to the library's location in `.asd/libs/libname/`.
+
+### CLI Commands
+
+#### `asd lib add` - Add a Library
+
+Add a new library dependency to your project:
+
+```bash
+# Add library with specific tag
+asd lib add https://github.com/user/counter-lib.git --tag v1.0.0
+
+# Add library tracking a branch
+asd lib add https://github.com/user/utils-lib.git --branch main
+
+# Add library at specific commit
+asd lib add https://github.com/user/fifo-lib.git --commit abc123def
+
+# Add with custom name (default: derived from URL)
+asd lib add https://github.com/user/hdl-library.git --tag v2.0 --name myhdl
+
+# SSH URL
+asd lib add git@github.com:user/private-lib.git --tag v1.0.0
+```
+
+**Library name derivation:**
+- `https://github.com/user/mylib.git` → `mylib`
+- `git@github.com:user/my-utils.git` → `my-utils`
+- Use `--name` to override the derived name
+
+#### `asd lib install` - Install Libraries
+
+Download and checkout all libraries from the manifest:
+
+```bash
+# Install all libraries
+asd lib install
+
+# Install specific library only
+asd lib install mylib
+```
+
+This clones repositories to `.asd/libs/` and checks out the specified version.
+
+#### `asd lib update` - Update Libraries
+
+Fetch and update libraries to their specified versions:
+
+```bash
+# Update all libraries
+asd lib update
+
+# Update specific library
+asd lib update mylib
+```
+
+For branches, this fetches the latest commits. For tags/commits, this ensures
+the correct version is checked out.
+
+#### `asd lib list` - List Libraries
+
+Show all libraries in the project:
+
+```bash
+asd lib list
+```
+
+Output:
+```
+                    Libraries
+┏━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Name      ┃ Version      ┃ Git URL                               ┃ Status        ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ mylib     │ tag: v1.0.0  │ https://github.com/user/mylib.git     │ installed     │
+│ otherlib  │ branch: main │ git@github.com:user/otherlib.git      │ not installed │
+└───────────┴──────────────┴───────────────────────────────────────┴───────────────┘
+```
+
+#### `asd lib remove` - Remove a Library
+
+Remove a library from the project:
+
+```bash
+asd lib remove mylib
+```
+
+This removes the library from the manifest and deletes it from `.asd/libs/`.
+
+### Transitive Dependencies
+
+Libraries can have their own dependencies. If a library contains its own
+`.asd/libraries.toml`, those dependencies are resolved recursively.
+
+**Example:**
+
+Your project depends on `mylib`:
+```toml
+# .asd/libraries.toml
+[libraries.mylib]
+git = "https://github.com/user/mylib.git"
+tag = "v1.0.0"
+```
+
+And `mylib` depends on `utils`:
+```toml
+# mylib/.asd/libraries.toml
+[libraries.utils]
+git = "https://github.com/user/utils.git"
+tag = "v2.0.0"
+```
+
+When you run `asd lib install`, both `mylib` and `utils` are installed.
+Circular dependencies are detected and reported as errors.
+
+### Auto-Include Directories
+
+When you use library sources, ASD automatically adds common include directories
+from those libraries to the compiler's include path. The following directories
+are checked in each referenced library:
+
+- `include/`
+- `inc/`
+- `rtl/`
+- `src/`
+
+This means you typically don't need to explicitly list include paths from libraries.
+
+### Creating a Library
+
+Any ASD project can be used as a library. To create a reusable library:
+
+1. **Create a standard ASD project:**
+   ```bash
+   mkdir my-rtl-lib
+   cd my-rtl-lib
+   asd init
+   ```
+
+2. **Organize your HDL sources:**
+   ```
+   my-rtl-lib/
+   ├── .asd/
+   │   └── libraries.toml
+   ├── rtl/
+   │   ├── counter.sv
+   │   └── fifo.sv
+   ├── include/
+   │   └── common.svh
+   └── src/
+       └── pkg/
+           └── types_pkg.sv
+   ```
+
+3. **Push to Git and tag releases:**
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial library release"
+   git tag v1.0.0
+   git remote add origin https://github.com/user/my-rtl-lib.git
+   git push -u origin main --tags
+   ```
+
+4. **Use in other projects:**
+   ```bash
+   cd other-project
+   asd lib add https://github.com/user/my-rtl-lib.git --tag v1.0.0
+   asd lib install
+   ```
+
+### Complete Example Workflow
+
+**Step 1: Initialize project and add libraries**
+
+```bash
+cd my-project
+asd init
+
+# Add some libraries
+asd lib add https://github.com/hdl-libs/counter.git --tag v1.2.0
+asd lib add https://github.com/hdl-libs/fifo.git --branch main
+asd lib add git@github.com:company/proprietary-ip.git --tag v3.0.0 --name company-ip
+
+# Install all libraries
+asd lib install
+```
+
+**Step 2: Create TOML configuration using library sources**
+
+```toml
+# rtl/my_design.toml
+[asd]
+version = "1.0"
+
+[module]
+name = "my_design"
+top = "top_wrapper"
+
+[module.sources]
+packages = [
+    "@counter/src/pkg/counter_pkg.sv",
+    "@company-ip/rtl/pkg/ip_pkg.sv",
+]
+
+modules = [
+    "@counter/rtl/counter.sv",
+    "@fifo/src/sync_fifo.sv",
+    "@company-ip/rtl/special_ip.sv",
+    "rtl/top_wrapper.sv",              # Local top-level
+]
+
+includes = [
+    "@counter/include/counter_defs.svh",
+]
+
+[parameters.WIDTH]
+default = 8
+
+[tools.simulation]
+configurations = ["default"]
+tests = ["tests/sim_top.py"]
+
+[tools.lint]
+configurations = ["all"]
+```
+
+**Step 3: Run simulation and lint**
+
+```bash
+# Run simulation
+asd sim rtl/my_design.toml
+
+# Run lint
+asd lint rtl/my_design.toml
+```
+
+### Best Practices
+
+1. **Use semantic versioning** - Tag library releases with semver (v1.0.0, v1.1.0, etc.)
+
+2. **Pin to tags for stability** - Use `--tag` for production projects to ensure reproducible builds
+
+3. **Use branches for development** - Use `--branch main` when actively developing against a library
+
+4. **Document library interfaces** - Include README and example usage in your libraries
+
+5. **Keep libraries focused** - Create small, single-purpose libraries rather than monolithic ones
+
+6. **Run `asd lib install` in CI** - Ensure libraries are installed before running tests in CI/CD
+
+7. **Add `.asd/libs/` to `.gitignore`** - This is done automatically, but verify it's not tracked
+
 ## Repository Detection and Path Resolution
 
 ### How ASD Finds the Repository Root
@@ -1031,21 +1408,22 @@ ASD automatically detects the repository root using (in priority order):
 
 1. **Explicit `--root` parameter** - Override via CLI: `asd --root /path/to/root sim module.toml`
 2. **`ASD_ROOT` environment variable** - Set project root: `export ASD_ROOT=/path/to/root`
-3. **`.asd-root` marker file** - Created by `asd init` in your project directory
-4. **Git repository root** (`.git`) - Automatically uses Git root if no `.asd-root` exists
-5. **Current directory** - Fallback if none of the above are found
+3. **`.asd/` directory** - Created by `asd init` in your project directory
+
+If none are found, ASD raises an error instructing you to run `asd init`.
 
 ### Path Resolution Rules
 
 **All paths in TOML files are relative to the repository root.** This means:
 
 ```toml
-# If .asd-root is at /home/user/my_project/
+# If .asd/ is at /home/user/my_project/
 # These paths resolve as:
 [module.sources]
 modules = [
     "src/counter.sv",           # → /home/user/my_project/src/counter.sv
     "rtl/uart/uart_tx.sv",      # → /home/user/my_project/rtl/uart/uart_tx.sv
+    "@mylib/rtl/fifo.sv",       # → /home/user/my_project/.asd/libs/mylib/rtl/fifo.sv
 ]
 
 [tools.simulation]
@@ -1058,21 +1436,21 @@ tests = [
 
 ```bash
 cd /home/user/my_project
-asd init                        # Creates .asd-root here
+asd init                        # Creates .asd/ here
 
 cd src
-asd sim ../rtl/module.toml      # Works! Finds .asd-root in parent directory
+asd sim ../rtl/module.toml      # Works! Finds .asd/ in parent directory
 
 cd ../tests
-asd lint ../rtl/module.toml     # Works! All paths resolved from .asd-root location
+asd lint ../rtl/module.toml     # Works! All paths resolved from .asd/ location
 ```
 
 **Important Notes:**
 
-- The `.asd-root` file is just a marker - it can be empty
-- If using Git, `.asd-root` is optional (ASD will use `.git` directory)
+- The `.asd/` directory contains library manifest and cloned dependencies
 - TOML file paths (in `asd sim module.toml`) can be absolute or relative to your current directory
 - But paths *inside* TOML files are always relative to the repository root
+- Paths starting with `@libname/` are resolved from `.asd/libs/libname/`
 - Build directories are created relative to repository root: `build-{module}-{config}/`
 
 ## Development
@@ -1168,21 +1546,25 @@ make pre-commit  # Runs format, lint, type-check, and all hooks
 
 ```text
 asd/
-├── core/           # Core components
-│   ├── repository.py   # Repository management
-│   ├── config.py      # Pydantic models
-│   └── loader.py      # TOML loading
-├── generators/     # Code generation
-│   └── toml_gen.py    # TOML generator
-├── simulators/     # Simulator interfaces
-│   ├── base.py        # Abstract base
-│   ├── verilator.py   # Verilator impl
-│   └── runner.py      # Simulation runner
-├── tools/          # Tool implementations
-│   └── lint.py        # Linting tool
-├── utils/          # Utilities
-│   └── verilog_parser.py  # HDL parsing
-└── cli.py          # CLI interface
+├── core/               # Core components
+│   ├── repository.py       # Repository root detection & path resolution
+│   ├── config.py           # Pydantic models for module configuration
+│   ├── loader.py           # TOML loading with composition
+│   ├── library.py          # Library management (LibraryManager, LibraryResolver)
+│   └── library_config.py   # Pydantic models for library manifest
+├── generators/         # Code generation
+│   └── toml_gen.py         # TOML generator from HDL
+├── simulators/         # Simulator interfaces
+│   ├── base.py             # Abstract simulator base
+│   ├── verilator.py        # Verilator implementation
+│   └── runner.py           # Simulation runner (cocotb integration)
+├── tools/              # Tool implementations
+│   └── lint.py             # Verilator lint wrapper
+├── utils/              # Utilities
+│   ├── sources.py          # Source file management (@libname/ resolution)
+│   ├── validation.py       # Configuration validation
+│   └── verilog_parser.py   # Basic HDL parsing
+└── cli.py              # Click-based CLI (includes lib command group)
 ```
 
 ## License
@@ -1241,6 +1623,15 @@ For issues and questions:
 - [ ] Assertion-based verification support
 - [ ] Regression test suite management
 - [ ] Test result visualization
+
+#### 📚 Library & Dependency Management
+
+- [x] External RTL library support via Git
+- [x] `@libname/path` source syntax
+- [x] Transitive dependency resolution
+- [x] Auto-include directory detection
+- [ ] Lock file for reproducible builds
+- [ ] Semver version constraints
 
 #### 🏗️ Build & Integration
 

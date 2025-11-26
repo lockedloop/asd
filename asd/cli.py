@@ -7,6 +7,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .core.library import (
+    DependencyResolver,
+    LibraryError,
+    LibraryManager,
+    LibraryNotFoundError,
+)
 from .core.loader import TOMLLoader
 from .core.repository import Repository
 from .generators.toml_gen import TOMLGenerator
@@ -26,7 +32,7 @@ def get_repository(ctx: click.Context) -> Repository:
         Repository instance
 
     Raises:
-        FileNotFoundError: If .asd-root not found
+        FileNotFoundError: If .asd/ directory not found
     """
     if "repo" not in ctx.obj:
         root = ctx.obj.get("root_option")
@@ -67,23 +73,29 @@ def cli(ctx: click.Context, verbose: bool, root: Path | None) -> None:
     ctx.obj["root_option"] = root
 
     # Don't initialize repository here - let commands do it when needed
-    # This allows 'asd init' to run without requiring .asd-root to exist
+    # This allows 'asd init' to run without requiring .asd/ to exist
 
 
 @cli.command()
 def init() -> None:
     """Initialize ASD repository in current directory."""
-    marker_path = Path(".asd-root")
+    asd_dir = Path(".asd")
 
     # Check if already initialized
-    if marker_path.exists():
-        console.print("[yellow]Warning:[/yellow] .asd-root already exists")
+    if asd_dir.exists():
+        console.print("[yellow]Warning:[/yellow] .asd/ directory already exists")
         console.print("Repository is already initialized")
         return
 
-    # Create .asd-root marker
-    marker_path.touch()
-    console.print("[green]✓[/green] Created .asd-root marker")
+    # Create .asd/ directory structure
+    asd_dir.mkdir()
+    (asd_dir / "libs").mkdir()
+
+    # Create empty libraries.toml
+    manifest_path = asd_dir / "libraries.toml"
+    manifest_path.write_text('[asd]\nversion = "1.0"\n\n[libraries]\n')
+
+    console.print("[green]✓[/green] Created .asd/ directory")
 
     console.print("\n[bold green]ASD repository initialized![/bold green]")
     console.print("\nNext steps:")
@@ -91,6 +103,7 @@ def init() -> None:
     console.print(
         "  2. Or auto-generate from existing HDL: [cyan]asd auto --top src/module.sv[/cyan]"
     )
+    console.print("  3. Add libraries: [cyan]asd lib add <git-url> --tag v1.0.0[/cyan]")
 
 
 @cli.command()
@@ -605,6 +618,177 @@ def info(ctx: click.Context, toml_file: Path, format: str) -> None:
         import yaml  # type: ignore[import-untyped]
 
         print(yaml.dump(config.model_dump(), default_flow_style=False))
+
+
+@cli.group()
+@click.pass_context
+def lib(ctx: click.Context) -> None:
+    """Manage RTL libraries."""
+    pass
+
+
+@lib.command("add")
+@click.argument("git_url")
+@click.option("--tag", "-t", help="Git tag to checkout")
+@click.option("--branch", "-b", help="Git branch to checkout")
+@click.option("--commit", "-c", help="Git commit to checkout")
+@click.option("--name", "-n", help="Override library name (derived from URL if not provided)")
+@click.pass_context
+def lib_add(
+    ctx: click.Context,
+    git_url: str,
+    tag: str | None,
+    branch: str | None,
+    commit: str | None,
+    name: str | None,
+) -> None:
+    """Add a library from a Git repository.
+
+    Examples:
+        asd lib add https://github.com/user/mylib.git --tag v1.0.0
+        asd lib add git@github.com:user/lib.git --branch main
+        asd lib add https://github.com/user/lib.git --commit abc123 --name mylib
+    """
+    # Validate version specifier
+    version_count = sum(1 for v in [tag, branch, commit] if v is not None)
+    if version_count == 0:
+        console.print("[red]Error:[/red] One of --tag, --branch, or --commit must be specified")
+        ctx.exit(1)
+    if version_count > 1:
+        console.print("[red]Error:[/red] Only one of --tag, --branch, or --commit can be specified")
+        ctx.exit(1)
+
+    repo = get_repository(ctx)
+    manager = LibraryManager(repo)
+
+    try:
+        lib_name = manager.add_library(
+            git_url=git_url,
+            tag=tag,
+            branch=branch,
+            commit=commit,
+            name=name,
+        )
+        console.print(f"[green]✓[/green] Added library '{lib_name}' to manifest")
+        console.print(f"\nRun [cyan]asd lib install[/cyan] to download the library")
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
+
+
+@lib.command("remove")
+@click.argument("name")
+@click.pass_context
+def lib_remove(ctx: click.Context, name: str) -> None:
+    """Remove a library from the project."""
+    repo = get_repository(ctx)
+    manager = LibraryManager(repo)
+
+    try:
+        manager.remove_library(name)
+        console.print(f"[green]✓[/green] Removed library '{name}'")
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
+
+
+@lib.command("update")
+@click.argument("name", required=False)
+@click.pass_context
+def lib_update(ctx: click.Context, name: str | None) -> None:
+    """Update library/libraries to latest version.
+
+    If NAME is provided, updates only that library.
+    Otherwise, updates all libraries.
+    """
+    repo = get_repository(ctx)
+    manager = LibraryManager(repo)
+
+    with console.status("[bold green]Updating libraries..."):
+        updated = manager.update_library(name)
+
+    if updated:
+        console.print(f"[green]✓[/green] Updated {len(updated)} library/libraries:")
+        for lib_name in updated:
+            console.print(f"  • {lib_name}")
+    else:
+        console.print("[yellow]No libraries to update[/yellow]")
+
+
+@lib.command("list")
+@click.pass_context
+def lib_list(ctx: click.Context) -> None:
+    """List all libraries in the project."""
+    repo = get_repository(ctx)
+    manager = LibraryManager(repo)
+
+    libraries = manager.list_libraries()
+
+    if not libraries:
+        console.print("No libraries configured")
+        console.print("\nAdd a library with: [cyan]asd lib add <git-url> --tag <version>[/cyan]")
+        return
+
+    # Get installed status
+    installed_libs = {lib.name for lib in manager.get_installed_libraries()}
+
+    table = Table(title="Libraries")
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Git URL")
+    table.add_column("Status")
+
+    for name, spec in libraries.items():
+        version_str = f"{spec.version_type}: {spec.version}"
+        status = "[green]installed[/green]" if name in installed_libs else "[yellow]not installed[/yellow]"
+        table.add_row(name, version_str, spec.git, status)
+
+    console.print(table)
+
+
+@lib.command("install")
+@click.argument("name", required=False)
+@click.pass_context
+def lib_install(ctx: click.Context, name: str | None) -> None:
+    """Install libraries from manifest.
+
+    If NAME is provided, installs only that library.
+    Otherwise, installs all libraries.
+    """
+    repo = get_repository(ctx)
+    manager = LibraryManager(repo)
+
+    try:
+        if name:
+            with console.status(f"[bold green]Installing library '{name}'..."):
+                lib = manager.install_library(name)
+            console.print(f"[green]✓[/green] Installed '{lib.name}' ({lib.version_type}: {lib.version})")
+        else:
+            with console.status("[bold green]Installing libraries..."):
+                installed = manager.install_all()
+
+            if installed:
+                console.print(f"[green]✓[/green] Installed {len(installed)} library/libraries:")
+                for lib in installed:
+                    console.print(f"  • {lib.name} ({lib.version_type}: {lib.version})")
+            else:
+                console.print("[yellow]No libraries to install[/yellow]")
+
+        # Resolve transitive dependencies
+        resolver = DependencyResolver(manager)
+        try:
+            deps = resolver.resolve_all()
+            if len(deps) > len(manager.list_libraries()):
+                console.print("\n[dim]Transitive dependencies resolved[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/yellow] Could not resolve transitive dependencies: {e}")
+
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
+    except LibraryError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
 
 
 def main() -> None:

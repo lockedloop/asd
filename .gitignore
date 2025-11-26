@@ -265,6 +265,9 @@ logs/
 local_config.toml
 .asd-local/
 
+# ASD library cache (cloned dependencies)
+.asd/libs/
+
 # Test outputs
 test_output/
 test_results/
