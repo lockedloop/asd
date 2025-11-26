@@ -67,6 +67,7 @@ class VerilatorSimulator(SimulatorBase):
         top_module: str | None = None,
         includes: list[Path] | None = None,
         verbose: bool = False,
+        capture_output: bool = True,
         **kwargs: Any,
     ) -> int:
         """Compile with Verilator.
@@ -79,6 +80,7 @@ class VerilatorSimulator(SimulatorBase):
             top_module: Top module name
             includes: Include directories
             verbose: Print the full command being executed
+            capture_output: Capture stdout/stderr (if False, output goes to inherited fds)
             **kwargs: Additional Verilator options
 
         Returns:
@@ -148,27 +150,29 @@ class VerilatorSimulator(SimulatorBase):
 
         # Print command if verbose
         if verbose:
-            logger.info("\n[Verilator Command]")
-            logger.info(" ".join(cmd))
-            logger.info("")
+            logger.info(f"[Verilator Command] {' '.join(cmd)}")
 
         # Execute
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=self.build_dir.parent,
-            )
+            if capture_output:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.build_dir.parent,
+                )
 
-            if result.returncode != 0:
-                logger.error("Verilator compilation failed:")
-                if result.stderr:
-                    logger.error(result.stderr)
-                if result.stdout:
-                    logger.error(result.stdout)
+                if result.returncode != 0:
+                    logger.error("Verilator compilation failed:")
+                    if result.stderr:
+                        logger.error(result.stderr)
+                    if result.stdout:
+                        logger.error(result.stdout)
 
-            return result.returncode
+                return result.returncode
+            else:
+                # Let output go to inherited file descriptors (for log redirection)
+                return subprocess.run(cmd, cwd=self.build_dir.parent, check=False).returncode
 
         except subprocess.TimeoutExpired:
             logger.error("Verilator compilation timed out")
@@ -385,10 +389,12 @@ int main(int argc, char** argv) {{
         defines: dict[str, Any],
         includes: list[Path] | None = None,
         extra_args: list[str] | None = None,
-        verbose: bool = False,
         **kwargs: Any,
     ) -> int:
         """Run Verilator in lint mode.
+
+        Always outputs the full command and verilator output to stdout/stderr
+        (for log file redirection).
 
         Args:
             sources: Source files to lint
@@ -396,7 +402,6 @@ int main(int argc, char** argv) {{
             defines: Preprocessor defines
             includes: Include directories
             extra_args: Additional arguments to pass to Verilator
-            verbose: Print the full command being executed
             **kwargs: Additional options
 
         Returns:
@@ -414,6 +419,7 @@ int main(int argc, char** argv) {{
             defines=defines,
             lint_only=True,
             includes=includes,
-            verbose=verbose,
+            verbose=True,  # Always log the command
+            capture_output=False,  # Let output go to log file
             **kwargs,
         )

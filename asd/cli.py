@@ -421,7 +421,6 @@ def sim(
     "--extra-args",
     help='Pass additional arguments to linter (e.g., "-Wno-WIDTH -Wno-UNUSED")',
 )
-@click.option("--verbose", "-v", is_flag=True, help="Print the full linter command being executed")
 @click.pass_context
 def lint(
     ctx: click.Context,
@@ -429,7 +428,6 @@ def lint(
     config: tuple[str, ...],
     param: tuple[str, ...],
     extra_args: str | None,
-    verbose: bool,
 ) -> None:
     """Lint HDL sources.
 
@@ -483,10 +481,10 @@ def lint(
 
         result = linter.lint(
             module_config,
+            toml_stem=toml_file.stem,
             configuration=cfg,
             param_overrides=param_overrides,
             extra_args=extra_args_list,
-            verbose=verbose,
         )
 
         if result != 0:
