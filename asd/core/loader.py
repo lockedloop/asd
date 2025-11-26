@@ -270,6 +270,15 @@ class TOMLLoader:
         # Merge inline and explicit configurations (explicit wins on conflict)
         configurations = self._merge_configurations(inline_configs, explicit_configs)
 
+        # Extract and validate default_configuration
+        default_configuration = module_data.get("default_configuration")
+        if default_configuration and default_configuration not in configurations:
+            available = ", ".join(sorted(configurations.keys()))
+            raise ValueError(
+                f"default_configuration '{default_configuration}' not found. "
+                f"Available configurations: {available}"
+            )
+
         # Process dependencies
         dependencies = self._process_dependencies(module_data.get("dependencies", {}))
 
@@ -285,6 +294,7 @@ class TOMLLoader:
             top=module_data.get("top", "top"),
             type=ModuleType(module_data.get("type", "rtl")),
             description=module_data.get("description"),
+            default_configuration=default_configuration,
             sources=sources,
             parameters=parameters,
             defines=defines,

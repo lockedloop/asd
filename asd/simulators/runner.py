@@ -168,6 +168,15 @@ class SimulationRunner:
             toml_stem, configuration, sim_context.test_files, log_filename
         )
 
+        # Print output file paths
+        from rich.console import Console
+
+        console = Console()
+        console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
+        if waves:
+            vcd_file = build_dir / f"{config.top}.vcd"
+            console.print(f"[dim]VCD file: {vcd_file.resolve()}[/dim]")
+
         # Execute simulation and check results
         # Pass whether custom log was used to determine if timestamped copy should be made
         return self._execute_simulation(
@@ -263,11 +272,6 @@ class SimulationRunner:
             log_file = Path(log_filename)
         else:
             log_file = build_dir / "asd.log"
-
-        from rich.console import Console
-
-        console = Console()
-        console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
 
         # Copy test files and supporting Python modules to build directory
         # This is necessary because cocotb's subprocess doesn't respect PYTHONPATH

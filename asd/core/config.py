@@ -260,6 +260,7 @@ class ModuleConfig(BaseModel):
     top: str
     type: ModuleType = ModuleType.RTL
     description: str | None = None
+    default_configuration: str | None = None  # Alias for "default" config
 
     # Sources
     sources: ModuleSources = Field(default_factory=ModuleSources)

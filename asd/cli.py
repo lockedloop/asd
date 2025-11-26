@@ -209,6 +209,34 @@ def parse_params(params: tuple[str, ...]) -> dict[str, Any]:
     return overrides
 
 
+def resolve_default_configuration(
+    config_names: tuple[str, ...],
+    module_config: Any,
+) -> tuple[str, ...]:
+    """Resolve 'default' to default_configuration alias if set.
+
+    When module has default_configuration set, replaces any 'default'
+    in the config names with the alias. This allows using a named
+    configuration as the implicit default.
+
+    Args:
+        config_names: Tuple of configuration names from CLI
+        module_config: Module configuration with potential default_configuration
+
+    Returns:
+        Tuple of resolved configuration names
+    """
+    if not module_config.default_configuration:
+        return config_names if config_names else ("default",)
+
+    # Replace any "default" with the alias
+    resolved = tuple(
+        module_config.default_configuration if c == "default" else c
+        for c in (config_names if config_names else ("default",))
+    )
+    return resolved
+
+
 def expand_configurations(
     config_names: tuple[str, ...],
     module_config: Any,
@@ -351,6 +379,9 @@ def sim(
     # Waves enabled by default, disabled by --no-waves
     waves = not no_waves
 
+    # Resolve "default" to default_configuration alias if set
+    config = resolve_default_configuration(config, module_config)
+
     # Determine which configurations to run using shared helper
     configs_to_run = expand_configurations(
         config, module_config, runner.validate_configuration, ctx
@@ -463,6 +494,9 @@ def lint(
         import shlex
 
         extra_args_list = shlex.split(extra_args)
+
+    # Resolve "default" to default_configuration alias if set
+    config = resolve_default_configuration(config, module_config)
 
     # Determine which configurations to run using shared helper
     configs_to_run = expand_configurations(
