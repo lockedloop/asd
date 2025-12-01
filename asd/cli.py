@@ -17,6 +17,7 @@ from .core.repository import Repository
 from .generators.toml_gen import TOMLGenerator
 from .simulators.runner import SimulationRunner
 from .tools.lint import Linter
+from .tools.vivado import VivadoSynthesizer
 
 console = Console()
 
@@ -536,6 +537,108 @@ def lint(
                 console.print(f"[green]✓[/green] No lint issues found for configuration '{cfg}'")
             else:
                 console.print("[green]✓[/green] No lint issues found")
+
+    if not all_passed:
+        ctx.exit(1)
+
+
+@cli.command()
+@click.argument("toml_file", type=Path)
+@click.option(
+    "--config",
+    "-c",
+    multiple=True,
+    default=["default"],
+    help="Configuration(s) to synthesize (can specify multiple: -c default -c wide, or use -c all)",
+)
+@click.option(
+    "--param",
+    multiple=True,
+    help="Override parameters (KEY=VALUE, can be specified multiple times)",
+)
+@click.option(
+    "--part",
+    "-p",
+    help="Override FPGA part number",
+)
+@click.option(
+    "--tcl-only",
+    is_flag=True,
+    help="Generate TCL script without running Vivado",
+)
+@click.pass_context
+def synth(
+    ctx: click.Context,
+    toml_file: Path,
+    config: tuple[str, ...],
+    param: tuple[str, ...],
+    part: str | None,
+    tcl_only: bool,
+) -> None:
+    """Synthesize HDL sources with Vivado (OOC mode).
+
+    Examples:
+        asd synth module.toml                    # Synthesize with default configuration
+        asd synth module.toml -c wide            # Synthesize with wide configuration
+        asd synth module.toml -c default -c wide # Synthesize multiple configurations
+        asd synth module.toml -c all             # Synthesize all configurations
+        asd synth module.toml --part xcu200-...  # Override FPGA part
+        asd synth module.toml --tcl-only         # Generate TCL only
+    """
+    loader = get_loader(ctx)
+    repo = get_repository(ctx)
+
+    # Resolve path relative to CWD (not repo root)
+    toml_file = toml_file.resolve()
+
+    # Load configuration
+    if not toml_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {toml_file}")
+        ctx.exit(1)
+
+    with console.status("[bold green]Loading configuration..."):
+        module_config = loader.load(toml_file)
+
+    # Parse parameter overrides
+    param_overrides = parse_params(param)
+
+    # Create synthesizer
+    synthesizer = VivadoSynthesizer(repo, loader)
+
+    # Resolve "default" to default_configuration alias if set
+    config = resolve_default_configuration(config, module_config)
+
+    # Determine which configurations to run using shared helper
+    configs_to_run = expand_configurations(
+        config, module_config, synthesizer.validate_configuration, ctx
+    )
+
+    # Show what we're running
+    if len(configs_to_run) > 1:
+        console.print(f"[bold]Synthesizing configurations: {', '.join(configs_to_run)}[/bold]")
+
+    # Run synthesis
+    all_passed = True
+    for cfg in configs_to_run:
+        if len(configs_to_run) > 1:
+            console.print(f"\n[cyan]→ Configuration: {cfg}[/cyan]")
+
+        result = synthesizer.synthesize(
+            module_config,
+            toml_stem=toml_file.stem,
+            configuration=cfg,
+            param_overrides=param_overrides,
+            part_override=part,
+            tcl_only=tcl_only,
+        )
+
+        if result != 0:
+            all_passed = False
+            if len(configs_to_run) > 1:
+                console.print(f"[red]✗[/red] Synthesis failed for configuration '{cfg}'")
+        else:
+            if len(configs_to_run) > 1 and not tcl_only:
+                console.print(f"[green]✓[/green] Synthesis passed for configuration '{cfg}'")
 
     if not all_passed:
         ctx.exit(1)

@@ -244,12 +244,29 @@ class LintConfig(ToolConfig):
     fix: bool = False
 
 
+class OOCConfig(BaseModel):
+    """Out-of-context synthesis configuration."""
+
+    clocks: dict[str, float] = Field(default_factory=lambda: {"clk_i": 2.0})
+    clock_uncertainty: float | None = None
+
+
+class SynthesisDirectives(BaseModel):
+    """Vivado synthesis directives."""
+
+    synthesis: str = "AlternateRoutability"
+    placement: str = "Default"
+    route: str = "Default"
+    physopt: str | None = None
+
+
 class SynthesisConfig(ToolConfig):
-    """Synthesis tool configuration."""
+    """Synthesis tool configuration for Vivado OOC synthesis."""
 
     tool: str = "vivado"
-    part: str | None = None
-    strategy: str | None = None
+    part: str = "xcu55c-fsvh2892-2L-e"  # Default to Alveo U55C
+    ooc: OOCConfig = Field(default_factory=OOCConfig)
+    directives: SynthesisDirectives = Field(default_factory=SynthesisDirectives)
 
 
 class ModuleConfig(BaseModel):
