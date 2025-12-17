@@ -3,8 +3,8 @@
 A TOML-based build system for HDL projects.
 """
 
-__version__ = "0.1.1"
-__author__ = "ASD Team"
+__version__ = "0.2.0"
+__author__ = "Danilo Sijacic"
 
 from .core.config import Configuration, Define, ModuleConfig, Parameter
 from .core.repository import Repository

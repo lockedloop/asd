@@ -51,7 +51,7 @@ name = "asd"
 packages = [{include = "asd"}]
 readme = "README.md"
 repository = "https://github.com/yourusername/asd"
-version = "0.1.1"
+version = "0.2.0"
 
 [tool.poetry.dependencies]
 click = ">=8.1.0"

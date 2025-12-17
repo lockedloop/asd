@@ -1574,7 +1574,77 @@ asd/
 │   ├── sources.py          # Source file management (@libname/ resolution)
 │   ├── validation.py       # Configuration validation
 │   └── verilog_parser.py   # Basic HDL parsing
+├── sims/               # Simulation utilities
+│   ├── __init__.py         # Package exports
+│   └── axis.py             # AXI-Stream Driver, Monitor, Scoreboard
 └── cli.py              # Click-based CLI (includes lib command group)
+```
+
+## AXI-Stream Simulation Utilities
+
+ASD provides ergonomic wrappers around cocotbext-axi for AXI-Stream verification
+in cocotb testbenches.
+
+### Classes
+
+- **Driver**: Wraps AxiStreamSource for driving transactions with duty cycle control
+- **Monitor**: Wraps AxiStreamSink for receiving transactions with backpressure simulation
+- **Scoreboard**: Byte or frame-level comparison with automatic logging
+
+### Basic Usage
+
+```python
+from asd.sims.axis import Driver, Monitor, Scoreboard
+from cocotbext.axi import AxiStreamBus
+
+@cocotb.test()
+async def test_loopback(dut):
+    driver = Driver(AxiStreamBus.from_prefix(dut, "s_axis"), dut.clk)
+    monitor = Monitor(AxiStreamBus.from_prefix(dut, "m_axis"), dut.clk)
+    scoreboard = Scoreboard("Test")
+
+    # Optional: set duty cycles for traffic shaping
+    driver.set_duty_cycle(0.8)   # 80% valid
+    monitor.set_duty_cycle(0.5)  # 50% ready (backpressure)
+
+    await driver.send(b'\x01\x02\x03')
+    scoreboard.add_expected(b'\x01\x02\x03')
+
+    result = await monitor.recv(timeout_ns=10000)
+    scoreboard.add_actual(result)
+
+    assert scoreboard.check(), scoreboard.report()
+```
+
+### Frame-Level Verification
+
+For designs using tid, tdest, tkeep, or tuser sideband signals:
+
+```python
+from cocotbext.axi import AxiStreamFrame
+
+scoreboard = Scoreboard("FrameTest", compare_mode="frame")
+frame = AxiStreamFrame(tdata=b'\xDE\xAD', tid=5, tdest=3)
+scoreboard.add_expected(frame)
+
+result = await monitor.recv_raw()  # Returns full AxiStreamFrame
+scoreboard.add_actual(result)
+```
+
+### Duty Cycle Control
+
+Control traffic shaping and backpressure with simple duty cycle values:
+
+```python
+# Driver: controls tvalid assertion rate
+driver.set_duty_cycle(0.5)   # Assert valid 50% of the time
+
+# Monitor: controls tready assertion rate (backpressure)
+monitor.set_duty_cycle(0.25)  # Assert ready 25% of the time (heavy backpressure)
+
+# Full speed (default)
+driver.set_duty_cycle(1.0)   # Always valid when data available
+monitor.set_duty_cycle(1.0)  # Always ready
 ```
 
 ## License
