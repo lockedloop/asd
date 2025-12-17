@@ -36,7 +36,8 @@ class Driver:
 
     def __init__(
         self,
-        bus: AxiStreamBus,
+        dut: Any,
+        bus: str | AxiStreamBus,
         clock: Any,
         reset: Any = None,
         reset_active_level: bool = True,
@@ -44,11 +45,14 @@ class Driver:
         """Initialize the AXIS driver.
 
         Args:
-            bus: AXI-Stream bus from cocotbext-axi
+            dut: Device under test (cocotb handle)
+            bus: AXI-Stream bus prefix string or AxiStreamBus instance
             clock: Clock signal
             reset: Reset signal (optional)
             reset_active_level: True if reset is active-high, False if active-low
         """
+        if isinstance(bus, str):
+            bus = AxiStreamBus.from_prefix(dut, bus)
         self._source = AxiStreamSource(
             bus,
             clock,
@@ -108,7 +112,8 @@ class Monitor:
 
     def __init__(
         self,
-        bus: AxiStreamBus,
+        dut: Any,
+        bus: str | AxiStreamBus,
         clock: Any,
         reset: Any = None,
         reset_active_level: bool = True,
@@ -116,11 +121,14 @@ class Monitor:
         """Initialize the AXIS monitor.
 
         Args:
-            bus: AXI-Stream bus from cocotbext-axi
+            dut: Device under test (cocotb handle)
+            bus: AXI-Stream bus prefix string or AxiStreamBus instance
             clock: Clock signal
             reset: Reset signal (optional)
             reset_active_level: True if reset is active-high, False if active-low
         """
+        if isinstance(bus, str):
+            bus = AxiStreamBus.from_prefix(dut, bus)
         self._sink = AxiStreamSink(
             bus,
             clock,

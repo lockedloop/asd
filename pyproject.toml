@@ -51,7 +51,7 @@ name = "asd"
 packages = [{include = "asd"}]
 readme = "README.md"
 repository = "https://github.com/lockedloop/asd"
-version = "0.2.1"
+version = "0.2.2"
 
 [tool.poetry.dependencies]
 click = ">=8.1.0"

@@ -1595,12 +1595,12 @@ in cocotb testbenches.
 
 ```python
 from asd.sims.axis import Driver, Monitor, Scoreboard
-from cocotbext.axi import AxiStreamBus
 
 @cocotb.test()
 async def test_loopback(dut):
-    driver = Driver(AxiStreamBus.from_prefix(dut, "s_axis"), dut.clk)
-    monitor = Monitor(AxiStreamBus.from_prefix(dut, "m_axis"), dut.clk)
+    # Preferred: pass bus prefix string (internally calls AxiStreamBus.from_prefix)
+    driver = Driver(dut, "s_axis", dut.clk)
+    monitor = Monitor(dut, "m_axis", dut.clk)
     scoreboard = Scoreboard("Test")
 
     # Optional: set duty cycles for traffic shaping

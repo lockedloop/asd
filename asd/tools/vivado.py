@@ -119,9 +119,7 @@ class VivadoSynthesizer:
         reports_dir.mkdir(parents=True, exist_ok=True)
 
         # Compose parameters and defines
-        composed = self.loader.composer.compose(
-            config, "synthesis", configuration, param_overrides
-        )
+        composed = self.loader.composer.compose(config, "synthesis", configuration, param_overrides)
         parameters = composed["parameters"]
         defines = composed["defines"]
 
@@ -199,8 +197,10 @@ class VivadoSynthesizer:
                     [
                         "vivado",
                         "-notrace",
-                        "-mode", "batch",
-                        "-source", str(tcl_file.resolve()),
+                        "-mode",
+                        "batch",
+                        "-source",
+                        str(tcl_file.resolve()),
                     ],
                     cwd=build_dir,
                     stdout=log_fh,
