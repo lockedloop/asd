@@ -622,18 +622,24 @@ class TOMLLoader:
         Raises:
             ValueError: If configuration is invalid
         """
-        if synth_data is None:
+        if not synth_data:
             return None
 
         try:
-            return SynthesisConfig(
-                tool=synth_data.get("tool", "vivado"),
-                configurations=synth_data.get("configurations"),
-                parameters=synth_data.get("parameters", {}),
-                defines=synth_data.get("defines", {}),
-                part=synth_data.get("part"),
-                strategy=synth_data.get("strategy"),
-            )
+            # Build kwargs, only including part if explicitly specified
+            kwargs: dict[str, Any] = {
+                "tool": synth_data.get("tool", "vivado"),
+                "configurations": synth_data.get("configurations"),
+                "parameters": synth_data.get("parameters", {}),
+                "defines": synth_data.get("defines", {}),
+            }
+            if synth_data.get("part"):
+                kwargs["part"] = synth_data["part"]
+            if synth_data.get("ooc"):
+                kwargs["ooc"] = synth_data["ooc"]
+            if synth_data.get("directives"):
+                kwargs["directives"] = synth_data["directives"]
+            return SynthesisConfig(**kwargs)
         except ValidationError as e:
             errors = [f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()]
             raise ValueError(

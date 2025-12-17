@@ -241,6 +241,7 @@ def resolve_default_configuration(
 def expand_configurations(
     config_names: tuple[str, ...],
     module_config: Any,
+    tool_config: Any,
     validator_func: Any,
     ctx: click.Context,
 ) -> list[str]:
@@ -253,6 +254,7 @@ def expand_configurations(
     Args:
         config_names: Tuple of configuration names (may include "all")
         module_config: Module configuration object
+        tool_config: Tool-specific configuration (with configurations list)
         validator_func: Validation function that takes (module_config, config_name)
                        and returns (is_valid, error_message)
         ctx: Click context for error handling
@@ -273,8 +275,14 @@ def expand_configurations(
             console.print(f"[red]Error:[/red] {error_msg}")
             ctx.exit(1)
 
-        # Expand to all module configurations
-        if module_config.configurations:
+        # Determine which configurations to run
+        tool_configs = tool_config.configurations if tool_config else None
+
+        if tool_configs and "all" not in tool_configs:
+            # Tool has specific configurations - use those
+            configs_to_run = list(tool_configs)
+        elif module_config.configurations:
+            # Tool supports all OR no tool config - use all module configs
             configs_to_run = list(module_config.configurations.keys())
             # Exclude "default" if it's aliased (it's not a real config, just an alias)
             if module_config.default_configuration and "default" in configs_to_run:
@@ -387,7 +395,7 @@ def sim(
 
     # Determine which configurations to run using shared helper
     configs_to_run = expand_configurations(
-        config, module_config, runner.validate_configuration, ctx
+        config, module_config, module_config.simulation, runner.validate_configuration, ctx
     )
 
     # Show what we're running
@@ -503,7 +511,7 @@ def lint(
 
     # Determine which configurations to run using shared helper
     configs_to_run = expand_configurations(
-        config, module_config, linter.validate_configuration, ctx
+        config, module_config, module_config.lint, linter.validate_configuration, ctx
     )
 
     # Show what we're running
@@ -610,7 +618,7 @@ def synth(
 
     # Determine which configurations to run using shared helper
     configs_to_run = expand_configurations(
-        config, module_config, synthesizer.validate_configuration, ctx
+        config, module_config, module_config.synthesis, synthesizer.validate_configuration, ctx
     )
 
     # Show what we're running

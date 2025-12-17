@@ -62,14 +62,8 @@ def validate_tool_configuration(
 
     # Otherwise, requested config must be in the allowed list
     if requested_config == "all":
-        # "all" means all module configurations must be in tool's allowed list
-        for cfg_name in config.configurations.keys():
-            if cfg_name not in tool_config.configurations:
-                return (
-                    False,
-                    f"Configuration '{cfg_name}' not supported by {tool_name} tool. "
-                    f"Tool supports: {', '.join(tool_config.configurations)}",
-                )
+        # "all" means run all configurations that the tool supports
+        # This is always valid - expansion will use tool's config list
         return (True, "")
     else:
         # Single config must be in allowed list
