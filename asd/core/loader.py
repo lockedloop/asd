@@ -8,6 +8,7 @@ from typing import Any
 
 import tomli
 import tomli_w
+from pydantic import ValidationError
 
 from ..utils.expression import SafeExpressionEvaluator
 from ..utils.logging import get_logger
@@ -545,32 +546,41 @@ class TOMLLoader:
 
         Returns:
             Simulation configuration or None (only None if sim_data is None)
+
+        Raises:
+            ValueError: If configuration is invalid
         """
         if sim_data is None:
             return None
 
-        # Process tests
-        tests = {}
-        if "tests" in sim_data:
-            tests_data = sim_data["tests"]
-            if isinstance(tests_data, dict):
-                # Dict format: {"test_name": {test_module: "...", ...}}
-                for test_name, test_data in tests_data.items():
-                    tests[test_name] = TestConfig(**test_data)
-            elif isinstance(tests_data, list):
-                # List format: ["path/to/test.py", ...]
-                # Auto-generate test names from file paths
-                for test_path in tests_data:
-                    test_name = Path(test_path).stem  # Use filename without extension
-                    tests[test_name] = TestConfig(test_module=test_path)
+        try:
+            # Process tests
+            tests = {}
+            if "tests" in sim_data:
+                tests_data = sim_data["tests"]
+                if isinstance(tests_data, dict):
+                    # Dict format: {"test_name": {test_module: "...", ...}}
+                    for test_name, test_data in tests_data.items():
+                        tests[test_name] = TestConfig(**test_data)
+                elif isinstance(tests_data, list):
+                    # List format: ["path/to/test.py", ...]
+                    # Auto-generate test names from file paths
+                    for test_path in tests_data:
+                        test_name = Path(test_path).stem  # Use filename without extension
+                        tests[test_name] = TestConfig(test_module=test_path)
 
-        return SimulationConfig(
-            configurations=sim_data.get("configurations"),
-            parameters=sim_data.get("parameters", {}),
-            defines=sim_data.get("defines", {}),
-            tests=tests,
-            vars=sim_data.get("vars", {}),
-        )
+            return SimulationConfig(
+                configurations=sim_data.get("configurations"),
+                parameters=sim_data.get("parameters", {}),
+                defines=sim_data.get("defines", {}),
+                tests=tests,
+                vars=sim_data.get("vars", {}),
+            )
+        except ValidationError as e:
+            errors = [f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            raise ValueError(
+                "Invalid [tools.simulation] configuration:\n" + "\n".join(errors)
+            ) from None
 
     def _process_lint_config(self, lint_data: dict[str, Any]) -> LintConfig | None:
         """Process lint configuration.
@@ -580,18 +590,25 @@ class TOMLLoader:
 
         Returns:
             Lint configuration or None (only None if lint_data is None)
+
+        Raises:
+            ValueError: If configuration is invalid
         """
         if lint_data is None:
             return None
 
-        # Empty dict {} should return default LintConfig (allows [tools.lint] with no options)
-        return LintConfig(
-            tool=lint_data.get("tool", "verilator"),
-            configurations=lint_data.get("configurations"),
-            parameters=lint_data.get("parameters", {}),
-            defines=lint_data.get("defines", {}),
-            fix=lint_data.get("fix", False),
-        )
+        try:
+            # Empty dict {} should return default LintConfig (allows [tools.lint] with no options)
+            return LintConfig(
+                tool=lint_data.get("tool", "verilator"),
+                configurations=lint_data.get("configurations"),
+                parameters=lint_data.get("parameters", {}),
+                defines=lint_data.get("defines", {}),
+                fix=lint_data.get("fix", False),
+            )
+        except ValidationError as e:
+            errors = [f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            raise ValueError("Invalid [tools.lint] configuration:\n" + "\n".join(errors)) from None
 
     def _process_synthesis_config(self, synth_data: dict[str, Any]) -> SynthesisConfig | None:
         """Process synthesis configuration.
@@ -601,18 +618,27 @@ class TOMLLoader:
 
         Returns:
             Synthesis configuration or None (only None if synth_data is None)
+
+        Raises:
+            ValueError: If configuration is invalid
         """
         if synth_data is None:
             return None
 
-        return SynthesisConfig(
-            tool=synth_data.get("tool", "vivado"),
-            configurations=synth_data.get("configurations"),
-            parameters=synth_data.get("parameters", {}),
-            defines=synth_data.get("defines", {}),
-            part=synth_data.get("part"),
-            strategy=synth_data.get("strategy"),
-        )
+        try:
+            return SynthesisConfig(
+                tool=synth_data.get("tool", "vivado"),
+                configurations=synth_data.get("configurations"),
+                parameters=synth_data.get("parameters", {}),
+                defines=synth_data.get("defines", {}),
+                part=synth_data.get("part"),
+                strategy=synth_data.get("strategy"),
+            )
+        except ValidationError as e:
+            errors = [f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            raise ValueError(
+                "Invalid [tools.synthesis] configuration:\n" + "\n".join(errors)
+            ) from None
 
     def evaluate_expression(self, expr: str, context: dict[str, Any]) -> Any:
         """Evaluate parameter expressions safely.
