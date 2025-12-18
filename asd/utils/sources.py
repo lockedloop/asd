@@ -83,6 +83,10 @@ class SourceManager:
         sources: list[Path] = []
         missing_files: list[str] = []
 
+        # Reset visited tracking for top-level calls (new configuration run)
+        if toml_path is None:
+            self._visited_tomls.clear()
+
         # Track current TOML to prevent circular dependencies
         if toml_path:
             resolved_toml = toml_path.resolve()
