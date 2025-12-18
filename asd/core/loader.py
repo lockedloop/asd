@@ -256,6 +256,7 @@ class TOMLLoader:
             modules=sources_data.get("modules", []),
             includes=sources_data.get("includes", []),
             resources=sources_data.get("resources", []),
+            tomls=sources_data.get("tomls", []),
         )
 
         # Process parameters and defines

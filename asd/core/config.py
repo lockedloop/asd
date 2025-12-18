@@ -171,6 +171,7 @@ class ModuleSources(BaseModel):
     modules: list[str] = Field(default_factory=list)
     includes: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
+    tomls: list[str] = Field(default_factory=list)
 
 
 class ModuleType(str, Enum):

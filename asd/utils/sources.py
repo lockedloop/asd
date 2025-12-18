@@ -15,6 +15,7 @@ from .logging import get_logger
 
 if TYPE_CHECKING:
     from ..core.library import LibraryResolver
+    from ..core.loader import TOMLLoader
 
 logger = get_logger()
 
@@ -22,14 +23,17 @@ logger = get_logger()
 class SourceManager:
     """Manage HDL source files and include directories."""
 
-    def __init__(self, repository: Repository):
+    def __init__(self, repository: Repository, loader: TOMLLoader | None = None) -> None:
         """Initialize source manager.
 
         Args:
             repository: Repository instance for path resolution
+            loader: Optional TOML loader for resolving tomls dependencies
         """
         self.repo = repository
+        self.loader = loader
         self._lib_resolver: LibraryResolver | None = None
+        self._visited_tomls: set[Path] = set()
 
     def _get_library_resolver(self) -> LibraryResolver | None:
         """Get library resolver if libraries are configured.
@@ -63,25 +67,50 @@ class SourceManager:
         else:
             return self.repo.resolve_path(path)
 
-    def prepare_sources(self, config: ModuleConfig) -> list[Path]:
+    def prepare_sources(self, config: ModuleConfig, toml_path: Path | None = None) -> list[Path]:
         """Prepare source file paths from configuration.
 
         Handles both local paths and library paths (@libname/path).
+        Recursively resolves TOML dependencies specified in sources.tomls.
 
         Args:
             config: Module configuration
+            toml_path: Path to current TOML file (for cycle detection)
 
         Returns:
             List of resolved source paths in compilation order
         """
-        sources = []
-        missing_files = []
+        sources: list[Path] = []
+        missing_files: list[str] = []
+
+        # Track current TOML to prevent circular dependencies
+        if toml_path:
+            resolved_toml = toml_path.resolve()
+            if resolved_toml in self._visited_tomls:
+                logger.debug(f"Skipping already processed TOML: {toml_path}")
+                return []
+            self._visited_tomls.add(resolved_toml)
+
+        # Process TOML dependencies first (recursive)
+        if self.loader and config.sources.tomls:
+            for toml_ref in config.sources.tomls:
+                dep_path = self._resolve_source_path(toml_ref)
+                if dep_path and dep_path.exists():
+                    try:
+                        dep_config = self.loader.load(dep_path)
+                        dep_sources = self.prepare_sources(dep_config, dep_path)
+                        sources.extend(dep_sources)
+                    except Exception as e:
+                        logger.warning(f"Failed to load TOML dependency '{toml_ref}': {e}")
+                else:
+                    logger.warning(f"TOML dependency not found: {toml_ref}")
 
         # Add packages first (they often contain definitions needed by modules)
         for pkg in config.sources.packages:
             path = self._resolve_source_path(pkg)
             if path and path.exists():
-                sources.append(path)
+                if path not in sources:  # Avoid duplicates
+                    sources.append(path)
             else:
                 missing_files.append(pkg)
 
@@ -89,7 +118,8 @@ class SourceManager:
         for module in config.sources.modules:
             path = self._resolve_source_path(module)
             if path and path.exists():
-                sources.append(path)
+                if path not in sources:  # Avoid duplicates
+                    sources.append(path)
             else:
                 missing_files.append(module)
 
@@ -103,20 +133,26 @@ class SourceManager:
 
         return sources
 
-    def get_include_dirs(self, config: ModuleConfig) -> list[Path]:
+    def reset_visited(self) -> None:
+        """Reset visited TOML tracking for new top-level call."""
+        self._visited_tomls.clear()
+
+    def get_include_dirs(self, config: ModuleConfig, toml_path: Path | None = None) -> list[Path]:
         """Get unique include directories from configuration.
 
         Handles both local paths and library paths (@libname/path).
-        Auto-adds include directories from library sources.
+        Auto-adds include directories from library sources and TOML dependencies.
 
         Args:
             config: Module configuration
+            toml_path: Path to current TOML file (for cycle detection)
 
         Returns:
             List of unique include directory paths
         """
         includes: list[Path] = []
         seen: set[Path] = set()
+        visited_tomls: set[Path] = set()
 
         def add_include_dir(path: Path | None) -> None:
             """Add include directory if valid and not seen."""
@@ -136,6 +172,29 @@ class SourceManager:
             if inc_dir not in seen and inc_dir.exists():
                 includes.append(inc_dir)
                 seen.add(inc_dir)
+
+        # Track current TOML to prevent circular dependencies
+        if toml_path:
+            resolved_toml = toml_path.resolve()
+            visited_tomls.add(resolved_toml)
+
+        # Process TOML dependencies first (recursive)
+        if self.loader and config.sources.tomls:
+            for toml_ref in config.sources.tomls:
+                dep_path = self._resolve_source_path(toml_ref)
+                if dep_path and dep_path.exists():
+                    resolved_dep = dep_path.resolve()
+                    if resolved_dep not in visited_tomls:
+                        visited_tomls.add(resolved_dep)
+                        try:
+                            dep_config = self.loader.load(dep_path)
+                            dep_includes = self.get_include_dirs(dep_config, dep_path)
+                            for inc in dep_includes:
+                                if inc not in seen:
+                                    includes.append(inc)
+                                    seen.add(inc)
+                        except Exception as e:
+                            logger.warning(f"Failed to get includes from TOML '{toml_ref}': {e}")
 
         # Process explicit include files
         for include_file in config.sources.includes:

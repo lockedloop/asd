@@ -102,7 +102,7 @@ class SimulationRunner:
         """
         self.repo = repository
         self.loader = loader
-        self.source_manager = SourceManager(repository)
+        self.source_manager = SourceManager(repository, loader)
 
     def validate_configuration(
         self, config: ModuleConfig, requested_config: str
