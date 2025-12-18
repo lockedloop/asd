@@ -174,7 +174,7 @@ class SimulationRunner:
         console = Console()
         console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
         if waves:
-            vcd_file = build_dir / f"{config.top}.vcd"
+            vcd_file = build_dir / "dump.vcd"
             console.print(f"[dim]VCD file: {vcd_file.resolve()}[/dim]")
 
         # Execute simulation and check results
