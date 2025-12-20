@@ -28,10 +28,23 @@ def _make_duty_cycle_generator(duty_cycle: float) -> Generator[bool, None, None]
 
 
 class Driver:
-    """Wraps cocotbext-axi AxiStreamSource for driving AXIS transactions.
+    r"""Wraps cocotbext-axi AxiStreamSource for driving AXIS transactions.
 
     Provides an ergonomic interface for sending data on an AXI-Stream bus
-    with optional duty cycle control for traffic shaping.
+    with optional duty cycle control for traffic shaping. Supports full
+    control over all AXI-Stream sideband signals (tid, tdest, tuser, tkeep).
+
+    Example:
+        # Simple usage
+        driver = Driver(dut, "s_axis", dut.clk)
+        await driver.send(b'\x01\x02\x03')
+
+        # With per-frame metadata
+        await driver.send(b'\xDE\xAD', tid=5, tdest=3)
+
+        # With default metadata for all frames
+        driver = Driver(dut, "s_axis", dut.clk, default_tid=1, default_tdest=0)
+        await driver.send(b'\x01')  # Uses tid=1, tdest=0
     """
 
     def __init__(
@@ -41,6 +54,10 @@ class Driver:
         clock: Any,
         reset: Any = None,
         reset_active_level: bool = True,
+        *,
+        default_tid: int | None = None,
+        default_tdest: int | None = None,
+        default_tuser: int | list[int] | None = None,
     ) -> None:
         """Initialize the AXIS driver.
 
@@ -50,6 +67,9 @@ class Driver:
             clock: Clock signal
             reset: Reset signal (optional)
             reset_active_level: True if reset is active-high, False if active-low
+            default_tid: Default TID value for all frames (optional)
+            default_tdest: Default TDEST value for all frames (optional)
+            default_tuser: Default TUSER value for all frames (optional)
         """
         if isinstance(bus, str):
             bus = AxiStreamBus.from_prefix(dut, bus)
@@ -60,28 +80,46 @@ class Driver:
             reset_active_level=reset_active_level,
         )
         self._clock = clock
+        self._default_tid = default_tid
+        self._default_tdest = default_tdest
+        self._default_tuser = default_tuser
 
-    async def send(self, data: bytes | AxiStreamFrame) -> None:
-        """Send data on the AXIS bus.
+    async def send(
+        self,
+        data: bytes | AxiStreamFrame,
+        *,
+        tkeep: bytes | list[int] | None = None,
+        tid: int | None = None,
+        tdest: int | None = None,
+        tuser: int | list[int] | None = None,
+        tx_complete: Any = None,
+    ) -> None:
+        """Send data on the AXIS bus with optional metadata.
+
+        When data is bytes, a frame is constructed using the provided
+        parameters (or defaults from constructor). When data is an
+        AxiStreamFrame, it is sent as-is and other parameters are ignored.
 
         Args:
             data: Bytes or AxiStreamFrame to send
+            tkeep: Byte enable mask (None = all bytes valid)
+            tid: Transaction ID (uses default_tid if None)
+            tdest: Destination ID (uses default_tdest if None)
+            tuser: User sideband data (uses default_tuser if None)
+            tx_complete: Callback event signaled when frame completes
         """
-        if isinstance(data, bytes):
-            frame = AxiStreamFrame(tdata=data)
-        else:
+        if isinstance(data, AxiStreamFrame):
             frame = data
+        else:
+            frame = AxiStreamFrame(
+                tdata=data,
+                tkeep=tkeep,
+                tid=tid if tid is not None else self._default_tid,
+                tdest=tdest if tdest is not None else self._default_tdest,
+                tuser=tuser if tuser is not None else self._default_tuser,
+                tx_complete=tx_complete,
+            )
         await self._source.send(frame)
-
-    async def send_frame(self, data: bytes) -> None:
-        """Send a complete frame (with tlast asserted).
-
-        This is a convenience alias for send() with bytes.
-
-        Args:
-            data: Bytes to send as a complete frame
-        """
-        await self.send(data)
 
     async def wait_idle(self) -> None:
         """Wait until all pending transfers complete."""
@@ -101,6 +139,36 @@ class Driver:
             self._source.clear_pause_generator()
         else:
             self._source.set_pause_generator(_make_duty_cycle_generator(duty_cycle))
+
+    @property
+    def default_tid(self) -> int | None:
+        """Default TID value for frames."""
+        return self._default_tid
+
+    @default_tid.setter
+    def default_tid(self, value: int | None) -> None:
+        """Set default TID value for frames."""
+        self._default_tid = value
+
+    @property
+    def default_tdest(self) -> int | None:
+        """Default TDEST value for frames."""
+        return self._default_tdest
+
+    @default_tdest.setter
+    def default_tdest(self, value: int | None) -> None:
+        """Set default TDEST value for frames."""
+        self._default_tdest = value
+
+    @property
+    def default_tuser(self) -> int | list[int] | None:
+        """Default TUSER value for frames."""
+        return self._default_tuser
+
+    @default_tuser.setter
+    def default_tuser(self, value: int | list[int] | None) -> None:
+        """Set default TUSER value for frames."""
+        self._default_tuser = value
 
 
 class Monitor:
@@ -137,36 +205,7 @@ class Monitor:
         )
         self._clock = clock
 
-    async def recv(self, timeout_ns: int | None = None) -> bytes:
-        """Receive data from the AXIS bus.
-
-        Args:
-            timeout_ns: Timeout in nanoseconds (None for no timeout)
-
-        Returns:
-            Received bytes (tdata only)
-
-        Raises:
-            cocotb.result.SimTimeoutError: If timeout expires
-        """
-        frame = await self.recv_raw(timeout_ns)
-        return bytes(frame.tdata)
-
-    async def recv_frame(self, timeout_ns: int | None = None) -> bytes:
-        """Receive a complete frame (waits for tlast).
-
-        This is equivalent to recv() since cocotbext-axi frames
-        are delineated by tlast by default.
-
-        Args:
-            timeout_ns: Timeout in nanoseconds (None for no timeout)
-
-        Returns:
-            Received frame bytes
-        """
-        return await self.recv(timeout_ns)
-
-    async def recv_raw(self, timeout_ns: int | None = None) -> AxiStreamFrame:
+    async def recv(self, timeout_ns: int | None = None) -> AxiStreamFrame:
         """Receive a complete frame with all metadata.
 
         Returns the full AxiStreamFrame including tdata, tkeep, tid, tdest, tuser.
@@ -189,6 +228,23 @@ class Monitor:
         else:
             frame = await self._sink.recv()
         return frame
+
+    async def recv_bytes(self, timeout_ns: int | None = None) -> bytes:
+        """Receive data from the AXIS bus (tdata only).
+
+        Convenience method that returns just the tdata bytes.
+
+        Args:
+            timeout_ns: Timeout in nanoseconds (None for no timeout)
+
+        Returns:
+            Received bytes (tdata only)
+
+        Raises:
+            cocotb.result.SimTimeoutError: If timeout expires
+        """
+        frame = await self.recv(timeout_ns)
+        return bytes(frame.tdata)
 
     def empty(self) -> bool:
         """Check if receive queue is empty."""
