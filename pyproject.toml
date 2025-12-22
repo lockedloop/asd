@@ -51,12 +51,12 @@ name = "asd"
 packages = [{include = "asd"}]
 readme = "README.md"
 repository = "https://github.com/lockedloop/asd"
-version = "0.2.4"
+version = "0.2.5"
 
 [tool.poetry.dependencies]
 click = ">=8.1.0"
 cocotb = ">=2.0.0"
-cocotbext-axi = ">=0.1.0"
+cocotbext-axi = {git = "https://github.com/alexforencich/cocotbext-axi.git", branch = "master"}
 cocotbext-eth = ">=0.1.0"
 cocotbext-i2c = ">=0.1.0"
 cocotbext-pcie = ">=0.2.0"

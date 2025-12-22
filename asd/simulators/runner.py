@@ -47,18 +47,22 @@ class SimulationContext:
 
 
 @contextmanager
-def _redirect_output(log_file: Path) -> Iterator[None]:
+def _redirect_output(log_file: Path, flush_interval: float = 1.0) -> Iterator[None]:
     """Redirect stdout/stderr to log file using OS-level file descriptors.
 
     Always writes all output to log file. This captures subprocess output
     that writes directly to file descriptors, not just Python's print() statements.
+    Includes periodic flushing for long-running executions.
 
     Args:
         log_file: Path to log file
+        flush_interval: Seconds between periodic flushes (default: 1.0)
 
     Yields:
         None
     """
+    import threading
+
     # Flush Python buffers before redirecting
     sys.stdout.flush()
     sys.stderr.flush()
@@ -70,6 +74,20 @@ def _redirect_output(log_file: Path) -> Iterator[None]:
     saved_stdout = os.dup(stdout_fd)
     saved_stderr = os.dup(stderr_fd)
 
+    # Event to signal flush thread to stop
+    stop_flushing = threading.Event()
+
+    def periodic_flush() -> None:
+        """Background thread that periodically flushes output."""
+        while not stop_flushing.wait(flush_interval):
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+                # Also sync to disk
+                os.fsync(stdout_fd)
+            except OSError:
+                pass  # File may be closed during shutdown
+
     try:
         # Open log file and redirect both stdout and stderr to it
         log_fd = os.open(str(log_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
@@ -77,12 +95,23 @@ def _redirect_output(log_file: Path) -> Iterator[None]:
         os.dup2(log_fd, stderr_fd)
         os.close(log_fd)
 
+        # Start background flush thread
+        flush_thread = threading.Thread(target=periodic_flush, daemon=True)
+        flush_thread.start()
+
         yield
 
-        # Flush before restoring
+        # Signal flush thread to stop and wait for it
+        stop_flushing.set()
+        flush_thread.join(timeout=0.5)
+
+        # Final flush before restoring
         sys.stdout.flush()
         sys.stderr.flush()
     finally:
+        # Ensure flush thread stops
+        stop_flushing.set()
+
         # Restore original file descriptors
         os.dup2(saved_stdout, stdout_fd)
         os.dup2(saved_stderr, stderr_fd)

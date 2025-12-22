@@ -3,7 +3,7 @@
 A TOML-based build system for HDL projects.
 """
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __author__ = "Danilo Sijacic"
 
 from .core.config import Configuration, Define, ModuleConfig, Parameter
