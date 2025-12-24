@@ -111,6 +111,9 @@ class Driver:
         if isinstance(data, AxiStreamFrame):
             frame = data
         else:
+            # Auto-calculate tkeep if not provided
+            if tkeep is None:
+                tkeep = self._calculate_tkeep(len(data))
             frame = AxiStreamFrame(
                 tdata=data,
                 tkeep=tkeep,
@@ -139,6 +142,39 @@ class Driver:
             self._source.clear_pause_generator()
         else:
             self._source.set_pause_generator(_make_duty_cycle_generator(duty_cycle))
+
+    def _calculate_tkeep(self, data_len: int) -> list[int] | None:
+        """Calculate tkeep mask based on data length and bus width.
+
+        Uses standard AXI-Stream convention: valid bytes at low positions.
+        Returns None if all bytes are valid (full beats only).
+
+        Args:
+            data_len: Length of data in bytes
+
+        Returns:
+            List of tkeep values (1=valid, 0=invalid), or None for full beats
+        """
+        byte_lanes = self._source.byte_lanes
+
+        # Full beats don't need explicit tkeep
+        if data_len % byte_lanes == 0:
+            return None
+
+        # Calculate tkeep for all beats
+        num_beats = (data_len + byte_lanes - 1) // byte_lanes
+        last_beat_valid = data_len % byte_lanes
+
+        tkeep = []
+        for beat_idx in range(num_beats):
+            if beat_idx < num_beats - 1:
+                # Full beat: all bytes valid
+                tkeep.extend([1] * byte_lanes)
+            else:
+                # Last beat: valid bytes at LOW positions [1,1,1,0,0,0]
+                tkeep.extend([1] * last_beat_valid + [0] * (byte_lanes - last_beat_valid))
+
+        return tkeep
 
     @property
     def default_tid(self) -> int | None:
