@@ -194,13 +194,21 @@ class SimulationRunner:
 
         # Set up build environment (directories, logs, paths)
         build_dir, log_file = self._setup_build_environment(
-            toml_stem, configuration, sim_context.test_files, log_filename
+            toml_stem, configuration, sim_context.test_files, log_filename, test_name
         )
 
-        # Print output file paths
+        # Print output file paths and test info
         from rich.console import Console
 
         console = Console()
+
+        # Print which test(s) are being run
+        test_stems = [f.stem for f in sim_context.test_files]
+        if len(test_stems) == 1:
+            console.print(f"[dim]Test: {test_stems[0]}[/dim]")
+        else:
+            console.print(f"[dim]Tests: {', '.join(test_stems)}[/dim]")
+
         console.print(f"[dim]Log file: {log_file.resolve()}[/dim]")
         if waves:
             vcd_file = build_dir / "dump.vcd"
@@ -277,6 +285,7 @@ class SimulationRunner:
         configuration: str,
         test_files: list[Path],
         log_filename: str | None,
+        test_name: str | None = None,
     ) -> tuple[Path, Path]:
         """Set up build directories, log files, and PYTHONPATH.
 
@@ -288,12 +297,16 @@ class SimulationRunner:
             configuration: Configuration name
             test_files: List of test files to copy
             log_filename: Custom log filename (optional, defaults to asd.log in build_dir)
+            test_name: Specific test name (optional, included in build dir if specified)
 
         Returns:
             Tuple of (build_dir, log_file) paths
         """
-        # Create build directory
-        build_dir = Path(BUILD_DIR_NAME) / f"{toml_stem}-{configuration}"
+        # Create build directory - include test name if running specific test
+        if test_name:
+            build_dir = Path(BUILD_DIR_NAME) / f"{toml_stem}-{configuration}-{test_name}"
+        else:
+            build_dir = Path(BUILD_DIR_NAME) / f"{toml_stem}-{configuration}"
         build_dir.mkdir(parents=True, exist_ok=True)
 
         # Set up logging - use custom filename or default to asd.log in build_dir
