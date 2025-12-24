@@ -230,9 +230,18 @@ class SimulationConfig(ToolConfig):
     """Simulation tool configuration.
 
     Note: Simulator is specified via CLI --simulator flag, not in TOML.
+
+    Tests can be specified as either:
+    - List of paths: tests = ["sim/sim_test1.py", "sim/sim_test2.py"]
+    - Dict with config: [tools.simulation.tests.name] with test_module, timeout, etc.
     """
 
-    tests: dict[str, TestConfig] = Field(default_factory=dict)
+    # TODO: Future improvement - tests as dict with handles:
+    # [tools.simulation.tests.smoke]
+    # simfile = "sim/sim_aes_gcm.py"
+    # ignore_ci = true
+    # timeout = 120
+    tests: list[str] | dict[str, TestConfig] = Field(default_factory=list)
     vars: dict[str, Any] = Field(default_factory=dict)
     verilator: SimulatorConfig | None = None
     modelsim: SimulatorConfig | None = None

@@ -532,7 +532,7 @@ class SimulationRunner:
 
         Args:
             config: Module configuration
-            test_name: Specific test name to run (optional)
+            test_name: Specific test name/stem to run (optional)
 
         Returns:
             List of test file paths
@@ -541,20 +541,32 @@ class SimulationRunner:
 
         # Check if tests are defined in TOML
         if config.simulation and config.simulation.tests:
-            if test_name:
-                # Specific test requested
-                test_config = config.simulation.tests.get(test_name)
-                if test_config and hasattr(test_config, "test_module"):
-                    test_file = self._resolve_test_path(test_config.test_module)
+            tests = config.simulation.tests
+
+            if isinstance(tests, list):
+                # List format: ["sim/sim_test1.py", "sim/sim_test2.py"]
+                for test_path in tests:
+                    test_file = self._resolve_test_path(test_path)
                     if test_file:
-                        test_files.append(test_file)
+                        # Filter by test_name if specified (match by stem)
+                        if test_name is None or test_file.stem == test_name:
+                            test_files.append(test_file)
             else:
-                # No specific test - use all tests from TOML
-                for test_config in config.simulation.tests.values():
-                    if hasattr(test_config, "test_module"):
+                # Dict format: {name: TestConfig}
+                if test_name:
+                    # Specific test requested
+                    test_config = tests.get(test_name)
+                    if test_config and hasattr(test_config, "test_module"):
                         test_file = self._resolve_test_path(test_config.test_module)
                         if test_file:
                             test_files.append(test_file)
+                else:
+                    # No specific test - use all tests from TOML
+                    for test_config in tests.values():
+                        if hasattr(test_config, "test_module"):
+                            test_file = self._resolve_test_path(test_config.test_module)
+                            if test_file:
+                                test_files.append(test_file)
 
         # If no test files found, auto-discover sim_*.py
         if not test_files and config.sources.modules:
@@ -569,6 +581,10 @@ class SimulationRunner:
             tests_dir = search_dir.parent / "tests"
             if tests_dir.exists():
                 test_files.extend(tests_dir.glob("sim_*.py"))
+
+            # Filter by test_name if specified
+            if test_name and test_files:
+                test_files = [f for f in test_files if f.stem == test_name]
 
         return test_files
 
@@ -660,18 +676,26 @@ class SimulationRunner:
             config: Module configuration
 
         Returns:
-            List of test names
+            List of test names (stems)
         """
         tests: list[str] = []
 
         # From explicit TOML configuration
         if config.simulation and config.simulation.tests:
-            tests.extend(config.simulation.tests.keys())
+            sim_tests = config.simulation.tests
+            if isinstance(sim_tests, list):
+                # List format: extract stems from paths
+                for test_path in sim_tests:
+                    tests.append(Path(test_path).stem)
+            else:
+                # Dict format: use keys
+                tests.extend(sim_tests.keys())
 
-        # Auto-discovered sim_*.py files
-        discovered = self._find_test_files(config)
-        for test_file in discovered:
-            tests.append(test_file.stem)
+        # Auto-discovered sim_*.py files (if no TOML tests defined)
+        if not tests:
+            discovered = self._find_test_files(config)
+            for test_file in discovered:
+                tests.append(test_file.stem)
 
         return list(set(tests))  # Remove duplicates
 
